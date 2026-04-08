@@ -236,7 +236,7 @@ U8G2_SSD1306_72X40_ER_1_HW_I2C u8g2(U8G2_R2, U8X8_PIN_NONE);
 #define DEFAULT_DROPOUT_RATE      0.3f    // v58: matches TorchJS webpage default
 
 #define DEFAULT_NUM_LABELS         3
-const char* DEFAULT_LABELS[] = { "0Blank", "1Circle", "2Square" };
+const char* DEFAULT_LABELS[] = { "0Blank", "1Cup", "2Pen" };
 
 // ======================================================
 // RUNTIME CONFIG STRUCT
