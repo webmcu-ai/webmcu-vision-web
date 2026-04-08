@@ -1,0 +1,3191 @@
+
+
+// ======================================================
+// XIAO ML KIT (OR XIAO ESP32S3 SENSE)
+// FULL VISION ML  — v66
+//
+// v66 additions over v65 (back-port from esp-all-menu-A0-image-train-infer42-28):
+//   - myWeightsTrained flag restored: set true on successful myLoadWeights() and
+//     on normal/early-save training completion; guards inference against untrained
+//     weights without always forcing a reload from SD.
+//   - myExportHeader() restored: writes /header/myWeights.h (C float array) to SD
+//     after every successful mySaveWeights(); adapted to use myCfg dynamic values.
+//   - USE_BAKED_WEIGHTS support restored: optional #define at top of file;
+//     if defined, includes myWeights.h and memcpy's baked arrays into PSRAM
+//     weights after He-init but before SD weight load (three-tier priority).
+//   - esp_log_level_set() suppression added to setup(): globally limits to WARN,
+//     then suppresses esp_camera to ERROR level to silence FB_OVF serial spam
+//     that pollutes WebSerial parsing.
+//   - SD init changed from hard-hang (while(1)) to graceful degradation: prints
+//     "No SD card" on OLED, sets mySDavailable=false, continues to boot.
+//     Inference of baked or previously-RAM-resident weights still works.
+//     SD-dependent operations (save/load/collect) check mySDavailable and warn.
+//   - Camera horizontal mirror (s->set_hmirror(s, 1)) restored in setup().
+//   - WebSerial convolution heatmap streaming added:
+//       HEATMAP_ON  — enable per-frame heatmap output during inference
+//       HEATMAP_OFF — disable (default); no FPS impact when off
+//     After each myForwardPass() in myActionInfer(), if enabled, mySendHeatmap()
+//     serialises myConv2_output as max-pooled-across-filters bytes (one byte per
+//     spatial position), base64 encoded, sent as:
+//       HEATMAP:<rows>x<cols>:<base64-bytes>\n
+//     The webpage can decode and render as a coloured overlay on the preview canvas.
+//     HEATMAP_STATUS reports current on/off state and heatmap dimensions.
+//
+// v63 additions over v61:
+//   - SD_JPEG_WRITE command: receives a base64-encoded JPEG from the webpage
+//     via WebSerial and writes it directly to the SD card.  Format:
+//     SD_JPEG_WRITE:/images/ClassName/img_<ts>.jpg:<base64>
+//     Parent directories are created automatically (/images, /images/ClassName)
+//     so the webpage can save ESP32 camera frames to the correct class folder
+//     without the user having to pre-create directories.
+//   - STATUS command updated to list SD_JPEG_WRITE.
+//   - Version bumped to 63.
+//
+// v61 additions over v60:
+//   - SD browser commands: SD_LIST, SD_READ, SD_WRITE,
+//     SD_DELETE, SD_RMDIR, SD_JPEG, SD_HEAD
+//   - Camera commands: CAM_CAPTURE, CAM_STREAM, CAM_STREAM_STOP
+//     (new CAM_JPEG_START/CAM_JPEG:.../CAM_JPEG_END protocol)
+//   - String-command parser runs alongside the existing single-char
+//     menu system — fully backward compatible
+//   - Requires: mbedtls/base64 (built into ESP32 SDK — no install)
+//   - Compatible with torchjs87.html SD browser + live stream UI
+// Small Image collection, training, inference for education and proof of concept
+//
+// SD card stores: images in class folders
+// SD card stores: weights in /header/myWeights.bin  (ASCII JSON header + float32 binary)
+// Serial monitor and OLED output
+// By jeremy Ellis
+// Use at your own risk!
+// MIT license
+// Github Profile https://github.com/hpssjellis
+// LinkedIn https://www.linkedin.com/in/jeremy-ellis-4237a9bb/
+//
+// v59 changes vs v58 (WebSerial streaming integration):
+//   - Added myBase64SendFrame(camera_fb_t*) helper — encodes a JPEG frame buffer
+//     as base64 and sends FRAME_B64:<base64>\n to Serial, matching the protocol
+//     expected by the TorchJS v83 webpage WebSerial receiver.
+//   - Added myActionWebStream() — menu item 6 "WebStream": continuously captures
+//     frames and sends them as FRAME_B64 at ~1 frame/sec until the user exits
+//     (T/L key or touch). Allows the webpage to capture live training images
+//     directly from the ESP32 camera without flashing a separate sketch.
+//   - myActionCollect: after each successful SD save, also calls myBase64SendFrame
+//     so the webpage serial monitor sees the exact image that was just saved.
+//   - Menu extended: myTotalItems 5 → 6, new item 6 labelled "WebStream".
+//   - myHandleMenuNavigation: '6' key added; myDrawMenu updated for 6 items.
+//   - myForwardDeclarations: myActionWebStream() added.
+//
+// v58 changes vs v57 (dropout training — matches TorchJS webpage):
+//   - Added dropoutRate to MyConfig struct (default 0.3, matches webpage default).
+//   - dropoutRate saved/loaded in config.json so webpage and ESP32 stay in sync.
+//   - myDropoutMask[] buffer allocated in PSRAM (1 float per flattened unit).
+//   - myTrainOneImage: after myForwardPass populates myConv2_output, inverted
+//     dropout is applied (dropped units zeroed, survivors scaled by 1/(1-rate)),
+//     then dense layer + softmax re-run on the masked activations so loss and
+//     weight gradients are computed consistently with the masked forward pass.
+//   - myBackwardDense: myDense_grad multiplied by myDropoutMask before propagating
+//     back to conv2, correctly zeroing gradients for dropped units.
+//   - dropoutRate=0.0 is a safe no-op: mask fills with 1.0, no behaviour change.
+//   - myForwardPass (inference) is completely unchanged — no dropout at test time.
+//
+// v57 changes vs v56 (launch-pad hardening):
+//   - myFreeImageCache() helper added; called on all training exit paths so
+//     PSRAM cache is always freed and cold-start triggers correctly next entry.
+//   - Config load now prints imagesToPsram and validationImages to Serial so
+//     students can confirm these keys loaded from config.json correctly.
+//   - myImgCache.labels array removed — it was populated but never read during
+//     training (label comes from myTrainingData[idx].label). Eliminates dead code.
+//   - Warning printed to Serial when validationImages >= image count for any
+//     class, so students know a class has been entirely consumed by validation.
+//
+// v56 changes vs v55:
+//   - DEFAULT_IMAGES_TO_PSRAM true: preload all training images into PSRAM
+//     before training begins; cycle a window across warm restarts if images
+//     exceed available PSRAM.
+//   - DEFAULT_VALIDATION_IMAGES 3: last N images (sorted by path) per class
+//     are held out as a validation set; loss + accuracy reported to Serial
+//     at the end of every epoch.
+//   - Defaults reordered to match config.json key order for readability.
+//
+// v53 changes vs v52 (mathematical correctness fixes):
+//   - Fix #2/#3: myBackwardDense: changed = to += for myOutput_w_grad and myOutput_b_grad
+//     so all images in a batch correctly accumulate into weight gradients (not overwrite).
+//   - Fix #2/#3: myBackwardConv2 / myBackwardConv1: removed per-image memset on weight
+//     gradient buffers; only propagation signals (myPool1_grad, myConv1_grad) are zeroed
+//     per image. Weight grads now accumulate correctly across the full batch.
+//   - Fix #6: Explicit memset of ALL gradient buffers at the start of each batch loop,
+//     before any image is processed, ensuring clean accumulation per batch.
+//   - Fix #5: DEFAULT_LEARNING_RATE reduced from 0.0003 → 0.00005 (6x) to prevent
+//     exploding gradients / NaN on float32 hardware.
+//   - Fix #1: Verified no change needed — code uses softmax+cross-entropy whose gradient
+//     (softmax_output - one_hot) is already mathematically correct.
+//   - Fix #3: Verified no change needed — weights are only updated after all backward
+//     passes complete (forward→all-backward→update was already the correct order).
+//   - Fix #4: Verified no change needed — row-major indexing is consistent throughout.
+//
+// v52 changes vs v51:
+//   - Adam epsilon: 1e-8f → 1e-6f (prevents float32 underflow / NaN on hardware)
+//   - Adam lr_t pre-computed once per batch (was recomputed 6x per batch)
+//   - Grayscale support: "useGrayscale" bool in config.json (default: false = RGB)
+//     Grayscale uses 1 channel instead of 3, reducing Conv1 weights 3x and
+//     improving inference FPS significantly for shape-based classification.
+//     inputChannels stored in weights header — mismatch detected on load.
+//     Version bumped to 50; old RGB weights rejected (delete and retrain).
+//   - Training single-tap save: tap once during training = save + exit early
+//     Long press (3+ taps) still exits WITHOUT saving.
+//     Serial: S key = save+exit,  L key = discard+exit (unchanged).
+//   - myBackwardDense: pre-zeros myDense_grad before accumulation (cleaner)
+//   - myAugFlip / myAugBrightness: use INPUT_CHANNELS (correct for grayscale)
+//
+// For platformio you need the U8g2 and ArduinoJson libraries and OPI PSRAM set:
+// lib_deps =
+//   olikraus/U8g2 @ ^2.35.30
+//   bblanchon/ArduinoJson @ ^7.3.1
+// build_flags =
+//   -DBOARD_HAS_PSRAM
+//   -DARDUINO_USB_CDC_ON_BOOT=1
+// board_build.arduino.memory_type = qio_opi
+// board_build.flash_mode = qio
+// board_upload.flash_size = 8MB
+//
+// Arduino IDE (Tools menu):
+//   Board          : XIAO_ESP32S3  (or "Seeed Studio XIAO ESP32S3 Sense")
+//   PSRAM          : OPI PSRAM
+//   USB CDC On Boot: Enabled
+//   Flash Size     : 8MB (64Mb)
+//   Flash Mode     : QIO 80MHz
+//
+// Libraries required (Sketch → Include Library → Manage Libraries):
+//   U8g2         by olikraus
+//   ArduinoJson  by Benoit Blanchon  >= 7.x
+//
+// .bin file format:
+//   --- WEIGHTS HEADER BEGIN ---
+//   { "inputSize":64, "numClasses":3, "conv1Filters":4, "conv2Filters":8,
+//     "quantization":"float32", "labels":["0Blank","1Circle","2Square"] }
+//   --- WEIGHTS HEADER END ---
+//   <blank line>
+//   <raw float32 binary: conv1_w, conv1_b, conv2_w, conv2_b, output_w, output_b>
+// ======================================================
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 0: CORE SYSTEM                                                     ██
+// ██  Includes, Config, Globals, Touch, Setup, Loop                           ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+// ======================================================
+// BAKED-IN WEIGHTS (optional)
+// Priority order: SD weights > baked-in weights > random He-init
+// To use: copy /header/myWeights.h from SD card to your sketch
+// folder, then uncomment the #define below and recompile.
+// ======================================================
+//#define USE_BAKED_WEIGHTS
+#ifdef USE_BAKED_WEIGHTS
+  #include "myWeights.h"
+#endif
+
+#include "esp_camera.h"
+#include "img_converters.h"
+#include "FS.h"
+#include "SD.h"
+#include "SPI.h"
+#include <vector>
+#include <algorithm>
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <ArduinoJson.h>
+#include "esp_log.h"   // v66: needed for esp_log_level_set()
+
+// v61: base64 encoding for SD_JPEG and CAM_CAPTURE/CAM_STREAM
+// mbedtls is built into the ESP32 Arduino SDK — no extra library needed.
+#include "mbedtls/base64.h"
+
+U8G2_SSD1306_72X40_ER_1_HW_I2C u8g2(U8G2_R2, U8X8_PIN_NONE);
+
+// ======================================================
+// COMPILED-IN DEFAULTS
+// Used when /header/config.json is absent or a key missing.
+// Written out as config.json on first boot.
+// Order matches the keys written by mySaveConfig() / config.json.
+// ======================================================
+#define DEFAULT_INPUT_SIZE        64
+#define DEFAULT_NUM_CLASSES        3
+#define DEFAULT_CONV1_FILTERS      4
+#define DEFAULT_CONV2_FILTERS      8
+#define DEFAULT_LEARNING_RATE      0.00005f  // v53: reduced 6x for float32 stability (Fix #5)
+#define DEFAULT_BATCH_SIZE        12
+#define DEFAULT_TARGET_EPOCHS     10
+#define DEFAULT_THRESHOLD_PRESS   1100
+#define DEFAULT_THRESHOLD_RELEASE  900
+#define DEFAULT_SCREEN_TIMEOUT    300000UL   // 5 minutes in ms
+#define DEFAULT_WEIGHTS_FILE      "myWeights.bin"
+
+// Versioning — integer, monotonically increasing with each breaking change.
+// MIN_VERSION is the oldest config.json / .bin file this firmware will accept.
+// Bump CURRENT_VERSION and MIN_VERSION together when the format changes.
+#define CURRENT_VERSION           63
+#define MIN_VERSION               50
+
+#define DEFAULT_USE_AUGMENTATION  false
+#define DEFAULT_USE_GRAYSCALE     false
+#define DEFAULT_IMAGES_TO_PSRAM   true    // load all training images to PSRAM before training
+#define DEFAULT_VALIDATION_IMAGES  3      // last N images per class reserved as validation set
+#define DEFAULT_DROPOUT_RATE      0.3f    // v58: matches TorchJS webpage default
+
+#define DEFAULT_NUM_LABELS         3
+const char* DEFAULT_LABELS[] = { "0Blank", "1Circle", "2Square" };
+
+// ======================================================
+// RUNTIME CONFIG STRUCT
+// ======================================================
+struct MyConfig {
+  int   inputSize;
+  int   numClasses;
+  int   conv1Filters;
+  int   conv2Filters;
+
+  // Derived (computed by myComputeArchSizes)
+  int   conv1OutputSize;
+  int   pool1OutputSize;
+  int   conv2OutputSize;
+  int   flattenedSize;
+  int   conv1Weights;
+  int   conv2Weights;
+  int   outputWeights;
+
+  float learningRate;
+  int   batchSize;
+  int   targetEpochs;
+
+  int           thresholdPress;
+  int           thresholdRelease;
+  unsigned long screenTimeout;
+
+  int    numLabels;
+  String classLabels[8];
+
+  String weightsFile;
+
+  // Versioning
+  int    version;       // this config's version number
+  int    minVersion;    // oldest .bin file accepted
+
+  // Training options
+  bool   useAugmentation;   // flip + brightness jitter on each epoch
+  bool   useGrayscale;      // true = 1-channel grayscale input, false = 3-channel RGB
+  bool   imagesToPsram;     // true = preload all training images into PSRAM before training
+  int    validationImages;  // last N images (sorted by path) held out as a validation set
+  float  dropoutRate;       // v58: fraction of flattened units dropped during training (0=off)
+};
+
+MyConfig myCfg;
+
+void myComputeArchSizes() {
+  myCfg.conv1OutputSize = myCfg.inputSize - 2;
+  myCfg.pool1OutputSize = myCfg.conv1OutputSize / 2;
+  myCfg.conv2OutputSize = myCfg.pool1OutputSize - 2;
+  myCfg.flattenedSize   = myCfg.conv2OutputSize * myCfg.conv2OutputSize * myCfg.conv2Filters;
+  int ch = myCfg.useGrayscale ? 1 : 3;          // input channels
+  myCfg.conv1Weights    = 3 * 3 * ch * myCfg.conv1Filters;
+  myCfg.conv2Weights    = 3 * 3 * myCfg.conv1Filters * myCfg.conv2Filters;
+  myCfg.outputWeights   = myCfg.flattenedSize * myCfg.numClasses;
+}
+
+void myApplyDefaultConfig() {
+  myCfg.inputSize        = DEFAULT_INPUT_SIZE;
+  myCfg.numClasses       = DEFAULT_NUM_CLASSES;
+  myCfg.conv1Filters     = DEFAULT_CONV1_FILTERS;
+  myCfg.conv2Filters     = DEFAULT_CONV2_FILTERS;
+  myCfg.learningRate     = DEFAULT_LEARNING_RATE;
+  myCfg.batchSize        = DEFAULT_BATCH_SIZE;
+  myCfg.targetEpochs     = DEFAULT_TARGET_EPOCHS;
+  myCfg.thresholdPress   = DEFAULT_THRESHOLD_PRESS;
+  myCfg.thresholdRelease = DEFAULT_THRESHOLD_RELEASE;
+  myCfg.screenTimeout    = DEFAULT_SCREEN_TIMEOUT;
+  myCfg.weightsFile      = DEFAULT_WEIGHTS_FILE;
+  myCfg.numLabels        = DEFAULT_NUM_LABELS;
+  for (int i = 0; i < DEFAULT_NUM_LABELS; i++)
+    myCfg.classLabels[i] = String(DEFAULT_LABELS[i]);
+  myCfg.version          = CURRENT_VERSION;
+  myCfg.minVersion       = MIN_VERSION;
+  myCfg.useAugmentation  = DEFAULT_USE_AUGMENTATION;
+  myCfg.useGrayscale     = DEFAULT_USE_GRAYSCALE;
+  myCfg.imagesToPsram    = DEFAULT_IMAGES_TO_PSRAM;
+  myCfg.validationImages = DEFAULT_VALIDATION_IMAGES;
+  myCfg.dropoutRate      = DEFAULT_DROPOUT_RATE;
+  myComputeArchSizes();
+}
+
+void mySaveConfig() {
+  if (!SD.exists("/header")) SD.mkdir("/header");
+  File f = SD.open("/header/config.json", FILE_WRITE);
+  if (!f) { Serial.println("[config] ERROR: could not write config.json"); return; }
+  JsonDocument doc;
+  doc["inputSize"]        = myCfg.inputSize;
+  doc["numClasses"]       = myCfg.numClasses;
+  doc["conv1Filters"]     = myCfg.conv1Filters;
+  doc["conv2Filters"]     = myCfg.conv2Filters;
+  doc["learningRate"]     = myCfg.learningRate;
+  doc["batchSize"]        = myCfg.batchSize;
+  doc["targetEpochs"]     = myCfg.targetEpochs;
+  doc["thresholdPress"]   = myCfg.thresholdPress;
+  doc["thresholdRelease"] = myCfg.thresholdRelease;
+  doc["screenTimeout"]    = (unsigned long)myCfg.screenTimeout;
+  doc["weightsFile"]      = myCfg.weightsFile;
+  doc["version"]          = myCfg.version;
+  doc["minVersion"]       = myCfg.minVersion;
+  doc["useAugmentation"]  = myCfg.useAugmentation;
+  doc["useGrayscale"]     = myCfg.useGrayscale;
+  doc["imagesToPsram"]    = myCfg.imagesToPsram;
+  doc["validationImages"] = myCfg.validationImages;
+  doc["dropoutRate"]      = myCfg.dropoutRate;
+  JsonArray labels = doc["classLabels"].to<JsonArray>();
+  for (int i = 0; i < myCfg.numLabels; i++) labels.add(myCfg.classLabels[i]);
+  serializeJsonPretty(doc, f);
+  f.close();
+  Serial.println("[config] Wrote default config to /header/config.json");
+}
+
+void myLoadConfig() {
+  myApplyDefaultConfig();
+  const char* path = "/header/config.json";
+  if (!SD.exists(path)) {
+    Serial.println("[config] config.json not found — using defaults");
+    mySaveConfig();
+    return;
+  }
+  File f = SD.open(path, FILE_READ);
+  if (!f) { Serial.println("[config] ERROR: could not open config.json"); return; }
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    Serial.printf("[config] JSON parse error: %s — using defaults\n", err.c_str());
+    return;
+  }
+  myCfg.inputSize        = doc["inputSize"]        | DEFAULT_INPUT_SIZE;
+  myCfg.numClasses       = doc["numClasses"]       | DEFAULT_NUM_CLASSES;
+  myCfg.conv1Filters     = doc["conv1Filters"]     | DEFAULT_CONV1_FILTERS;
+  myCfg.conv2Filters     = doc["conv2Filters"]     | DEFAULT_CONV2_FILTERS;
+  myCfg.learningRate     = doc["learningRate"]      | DEFAULT_LEARNING_RATE;
+  myCfg.batchSize        = doc["batchSize"]        | DEFAULT_BATCH_SIZE;
+  myCfg.targetEpochs     = doc["targetEpochs"]     | DEFAULT_TARGET_EPOCHS;
+  myCfg.thresholdPress   = doc["thresholdPress"]   | DEFAULT_THRESHOLD_PRESS;
+  myCfg.thresholdRelease = doc["thresholdRelease"] | DEFAULT_THRESHOLD_RELEASE;
+  myCfg.screenTimeout    = doc["screenTimeout"]    | (int)DEFAULT_SCREEN_TIMEOUT;
+  myCfg.weightsFile      = doc["weightsFile"]      | DEFAULT_WEIGHTS_FILE;
+  myCfg.version          = doc["version"]          | CURRENT_VERSION;
+  myCfg.minVersion       = doc["minVersion"]       | MIN_VERSION;
+  myCfg.useAugmentation  = doc["useAugmentation"]  | DEFAULT_USE_AUGMENTATION;
+  myCfg.useGrayscale     = doc["useGrayscale"]     | DEFAULT_USE_GRAYSCALE;
+  myCfg.imagesToPsram    = doc["imagesToPsram"]    | DEFAULT_IMAGES_TO_PSRAM;
+  myCfg.validationImages = doc["validationImages"] | DEFAULT_VALIDATION_IMAGES;
+  myCfg.dropoutRate      = doc["dropoutRate"]      | DEFAULT_DROPOUT_RATE;
+
+  // --- Version check — block boot if config is too old ---
+  if (myCfg.version < MIN_VERSION) {
+    Serial.printf("[config] ERROR: config.json version %d < minimum %d\n",
+                  myCfg.version, MIN_VERSION);
+    Serial.println("[config] Please update or delete /header/config.json");
+    u8g2.firstPage();
+    do {
+      u8g2.setFont(u8g2_font_6x10_tf);
+      u8g2.drawStr(0,  10, "CONFIG ERROR");
+      u8g2.drawStr(0,  22, "Old version!");
+      u8g2.setCursor(0, 34);
+      u8g2.print("v"); u8g2.print(myCfg.version);
+      u8g2.print(" < "); u8g2.print(MIN_VERSION);
+    } while (u8g2.nextPage());
+    while (true) { delay(1000); }   // halt
+  }
+  if (doc["classLabels"].is<JsonArray>()) {
+    JsonArray arr = doc["classLabels"].as<JsonArray>();
+    int count = 0;
+    for (JsonVariant v : arr) {
+      if (count >= 8) break;
+      myCfg.classLabels[count++] = v.as<String>();
+    }
+    if (count > 0) { myCfg.numLabels = count; myCfg.numClasses = count; }
+  }
+  myComputeArchSizes();
+  Serial.println("[config] Loaded /header/config.json:");
+  Serial.printf("  inputSize=%d  numClasses=%d  conv1F=%d  conv2F=%d\n",
+                myCfg.inputSize, myCfg.numClasses, myCfg.conv1Filters, myCfg.conv2Filters);
+  Serial.printf("  flattenedSize=%d  outputWeights=%d\n",
+                myCfg.flattenedSize, myCfg.outputWeights);
+  Serial.printf("  learningRate=%.5f  batchSize=%d  targetEpochs=%d\n",
+                myCfg.learningRate, myCfg.batchSize, myCfg.targetEpochs);
+  Serial.printf("  weightsFile=%s\n", myCfg.weightsFile.c_str());
+  Serial.printf("  useAugmentation=%s  useGrayscale=%s\n",
+                myCfg.useAugmentation ? "true" : "false",
+                myCfg.useGrayscale    ? "true" : "false");
+  Serial.printf("  imagesToPsram=%s  validationImages=%d\n",
+                myCfg.imagesToPsram   ? "true" : "false",
+                myCfg.validationImages);
+  Serial.print ("  classLabels=");
+  for (int i = 0; i < myCfg.numLabels; i++) {
+    Serial.print(myCfg.classLabels[i]);
+    if (i < myCfg.numLabels - 1) Serial.print(", ");
+  }
+  Serial.println();
+}
+
+// ======================================================
+// LEGACY SHIM — keeps myClassLabels[] working in Parts 1-4
+// ======================================================
+String myClassLabels[8];
+
+void mySyncLegacyVars() {
+  for (int i = 0; i < myCfg.numLabels; i++)
+    myClassLabels[i] = myCfg.classLabels[i];
+}
+
+#define LEARNING_RATE     (myCfg.learningRate)
+#define BATCH_SIZE        (myCfg.batchSize)
+#define TARGET_EPOCHS     (myCfg.targetEpochs)
+#define NUM_CLASSES       (myCfg.numClasses)
+#define INPUT_SIZE        (myCfg.inputSize)
+#define INPUT_CHANNELS    (myCfg.useGrayscale ? 1 : 3)
+#define CONV1_FILTERS     (myCfg.conv1Filters)
+#define CONV2_FILTERS     (myCfg.conv2Filters)
+#define CONV1_WEIGHTS     (myCfg.conv1Weights)
+#define CONV2_WEIGHTS     (myCfg.conv2Weights)
+#define FLATTENED_SIZE    (myCfg.flattenedSize)
+#define OUTPUT_WEIGHTS    (myCfg.outputWeights)
+#define CONV1_OUTPUT_SIZE (myCfg.conv1OutputSize)
+#define POOL1_OUTPUT_SIZE (myCfg.pool1OutputSize)
+#define CONV2_OUTPUT_SIZE (myCfg.conv2OutputSize)
+
+// ======================================================
+// UI PARAMETERS
+// ======================================================
+//const int myTotalItems = 6;   // v59: +1 for WebStream
+const int myTotalItems = 5;   // WebStream is serial-only (key '6'), not in OLED menu
+
+#define myThresholdPress   (myCfg.thresholdPress)
+#define myThresholdRelease (myCfg.thresholdRelease)
+#define myScreenTimeout    (myCfg.screenTimeout)
+
+// ======================================================
+// UNIFIED TOUCH INPUT SYSTEM
+// ======================================================
+struct TouchState {
+  bool isTouching               = false;
+  int  tapCount                 = 0;
+  unsigned long firstTapTime    = 0;
+  unsigned long lastReleaseTime = 0;
+  unsigned long lastCheckTime   = 0;
+  const unsigned long tapWindow    = 800;
+  const int           longPressTaps = 3;
+  const unsigned long debounceDelay = 50;
+};
+TouchState myTouch;
+
+unsigned long myLastActivityTime = 0;
+unsigned long myLastTapTime      = 0;
+const int     myTapCooldown      = 250;
+int           myMenuIndex        = 1;
+bool          myIsSelected       = false;
+
+// Adam optimizer step counter — persists across warm retrains,
+// reset to 0 only on fresh entry (new weights loaded from SD or random init).
+// This keeps Adam's bias correction terms (1-β^step) growing correctly
+// across multiple training sessions without re-entry from the menu.
+int           myAdamStep         = 0;
+
+// v66: SD availability flag — set in setup(); checked by all SD-dependent operations.
+// Allows graceful operation (inference of baked/RAM weights) without SD card.
+bool mySDavailable = false;
+
+// v66: myWeightsTrained — true once weights have been trained or loaded from SD/baked.
+// Prevents inference on random He-init weights.
+bool myWeightsTrained = false;
+
+// v66: heatmap streaming toggle — controlled by HEATMAP_ON / HEATMAP_OFF WebSerial commands.
+// When true, mySendHeatmap() fires after each myForwardPass() in myActionInfer().
+// Significantly reduces FPS; disabled by default.
+bool myHeatmapEnabled = false;
+
+// ======================================================
+// v61: STRING COMMAND STATE
+// The existing sketch only parses single characters.
+// v61 adds a full-line string parser that handles the
+// SD browser and camera commands from torchjs87.html.
+// Both parsers run concurrently in myHandleMenuNavigation().
+// ======================================================
+String mySerialLineBuf = "";             // accumulates chars until '\n'
+bool   myCamStreaming  = false;          // true = loop sends frames continuously
+unsigned long myLastCamStreamMs = 0;
+const uint16_t MY_CAM_STREAM_INTERVAL_MS = 200; // ~5 fps — limited by transfer time
+
+// v64: chunked JPEG write state (SD_JPEG_WRITE_START / SD_JPEG_CHUNK / SD_JPEG_WRITE_END)
+String myJpegWritePath   = "";           // destination path on SD card
+String myJpegWriteB64    = "";           // accumulated base64 chunks
+bool   myJpegWriteActive = false;        // true = collecting SD_JPEG_CHUNK lines
+
+// ======================================================
+// XIAO ESP32-S3 CAMERA PINS
+// ======================================================
+#define PWDN_GPIO_NUM   -1
+#define RESET_GPIO_NUM  -1
+#define XCLK_GPIO_NUM   10
+#define SIOD_GPIO_NUM   40
+#define SIOC_GPIO_NUM   39
+#define Y9_GPIO_NUM     48
+#define Y8_GPIO_NUM     11
+#define Y7_GPIO_NUM     12
+#define Y6_GPIO_NUM     14
+#define Y5_GPIO_NUM     16
+#define Y4_GPIO_NUM     18
+#define Y3_GPIO_NUM     17
+#define Y2_GPIO_NUM     15
+#define VSYNC_GPIO_NUM  38
+#define HREF_GPIO_NUM   47
+#define PCLK_GPIO_NUM   13
+
+// ======================================================
+// GLOBAL ML BUFFERS  (all PSRAM, allocated after config)
+// ======================================================
+uint8_t* myRgbBuffer   = nullptr;
+float* myInputBuffer   = nullptr;
+float* myConv1_w       = nullptr;
+float* myConv1_b       = nullptr;
+float* myConv2_w       = nullptr;
+float* myConv2_b       = nullptr;
+float* myOutput_w      = nullptr;
+float* myOutput_b      = nullptr;
+float* myConv1_w_grad  = nullptr;
+float* myConv1_b_grad  = nullptr;
+float* myConv2_w_grad  = nullptr;
+float* myConv2_b_grad  = nullptr;
+float* myOutput_w_grad = nullptr;
+float* myOutput_b_grad = nullptr;
+float* myConv1_w_m     = nullptr;
+float* myConv1_w_v     = nullptr;
+float* myConv1_b_m     = nullptr;
+float* myConv1_b_v     = nullptr;
+float* myConv2_w_m     = nullptr;
+float* myConv2_w_v     = nullptr;
+float* myConv2_b_m     = nullptr;
+float* myConv2_b_v     = nullptr;
+float* myOutput_w_m    = nullptr;
+float* myOutput_w_v    = nullptr;
+float* myOutput_b_m    = nullptr;
+float* myOutput_b_v    = nullptr;
+float* myConv1_output  = nullptr;
+float* myPool1_output  = nullptr;
+float* myConv2_output  = nullptr;
+float* myDense_output  = nullptr;
+float* myDense_grad    = nullptr;
+float* myConv2_grad    = nullptr;
+float* myPool1_grad    = nullptr;
+float* myConv1_grad    = nullptr;
+float* myDropoutMask   = nullptr;  // v58: 1 float per flattened unit; scale or 0.0
+
+struct TrainingItem { String path; int label; };
+std::vector<TrainingItem> myTrainingData;
+
+// ======================================================
+// PSRAM IMAGE CACHE  (used when myCfg.imagesToPsram == true)
+// ======================================================
+// Each cached slot holds one pre-decoded, normalised float image.
+// If all images fit, the cache is built once and reused across warm restarts.
+// If not all images fit, the cache holds as many as PSRAM allows and is
+// cycled (re-filled from a different window) on each warm restart.
+struct PsramImageCache {
+  float**  slots     = nullptr;  // array of pointers, one per cached image
+  int      capacity  = 0;        // number of slots allocated
+  int      count     = 0;        // number of slots currently filled
+  int      offset    = 0;        // starting index into myTrainingData for this cycle
+  bool     complete  = false;    // true when all training images fit in cache
+} myImgCache;
+
+// Free all PSRAM image data and reset the cache to a clean cold-start state.
+// Must be called on every training exit path so the next entry re-builds correctly.
+void myFreeImageCache() {
+  if (myImgCache.slots) {
+    for (int i = 0; i < myImgCache.count; i++)
+      if (myImgCache.slots[i]) { free(myImgCache.slots[i]); myImgCache.slots[i] = nullptr; }
+    free(myImgCache.slots);
+    myImgCache.slots = nullptr;
+  }
+  myImgCache.capacity = myImgCache.count = myImgCache.offset = 0;
+  myImgCache.complete = false;
+  Serial.println("[psram] Image cache freed.");
+}
+
+// ======================================================
+// UTILITY FUNCTIONS
+// ======================================================
+inline float clip_value(float v, float mn = -100, float mx = 100) {
+  if (isnan(v) || isinf(v)) return 0;
+  return constrain(v, mn, mx);
+}
+inline float leaky_relu(float x)       { return x > 0 ? x : 0.1f * x; }
+inline float leaky_relu_deriv(float x) { return x > 0 ? 1.0f : 0.1f; }
+
+// ======================================================
+// TOUCH FUNCTIONS
+// ======================================================
+int myReadTouch() {
+  int sum = 0;
+  for (int i = 0; i < 3; i++) { sum += analogRead(A0); delayMicroseconds(100); }
+  return sum / 3;
+}
+
+void myResetTouchState() {
+  myTouch.isTouching = false;
+  myTouch.tapCount   = 0;
+  myTouch.firstTapTime = myTouch.lastReleaseTime = myTouch.lastCheckTime = 0;
+}
+
+void myUpdateTouchState() {
+  unsigned long now = millis();
+  if (now - myTouch.lastCheckTime < 20) return;
+  myTouch.lastCheckTime = now;
+  int val = myReadTouch();
+  bool touchActive = myTouch.isTouching ? (val > myThresholdRelease) : (val > myThresholdPress);
+  if (touchActive && !myTouch.isTouching) {
+    if (now - myTouch.lastReleaseTime < myTouch.debounceDelay) return;
+    myTouch.isTouching = true;
+    if (myTouch.tapCount == 0 || (now - myTouch.firstTapTime < myTouch.tapWindow)) {
+      if (myTouch.tapCount == 0) myTouch.firstTapTime = now;
+      myTouch.tapCount++;
+      Serial.printf("Tap #%d\n", myTouch.tapCount);
+    } else {
+      myTouch.tapCount = 1;
+      myTouch.firstTapTime = now;
+      Serial.println("Tap #1 (new window)");
+    }
+  }
+  if (!touchActive && myTouch.isTouching) {
+    myTouch.isTouching = false;
+    myTouch.lastReleaseTime = now;
+  }
+}
+
+int myCheckTouchInput() {
+  myUpdateTouchState();
+  unsigned long now = millis();
+  if (myTouch.tapCount > 0 && !myTouch.isTouching) {
+    if (now - myTouch.firstTapTime > myTouch.tapWindow) {
+      int result = (myTouch.tapCount >= myTouch.longPressTaps) ? 2 : 1;
+      int count  = myTouch.tapCount;
+      myResetTouchState();
+      Serial.printf(result == 2 ? "LONG PRESS (%d taps)\n" : "TAP (%d tap%s)\n",
+                    count, count > 1 ? "s" : "");
+      return result;
+    }
+  }
+  return 0;
+}
+
+void myCheckTouchBackground() { myUpdateTouchState(); }
+
+int myPeekTouchAction() {
+  myUpdateTouchState();
+  unsigned long now = millis();
+  if (myTouch.tapCount > 0 && !myTouch.isTouching)
+    if (now - myTouch.firstTapTime > myTouch.tapWindow)
+      return (myTouch.tapCount >= myTouch.longPressTaps) ? 2 : 1;
+  return 0;
+}
+
+// ======================================================
+// FORWARD DECLARATIONS
+// ======================================================
+void myAllocateMemory(bool resetMoments = true);
+void mySaveWeights();
+bool myLoadWeights(bool resetMoments = true);
+void myExportHeader();
+void myLoadConfig();
+void mySaveConfig();
+void myApplyDefaultConfig();
+void myComputeArchSizes();
+void mySyncLegacyVars();
+void myActionCollect(int classIdx);
+void myActionTrain();
+void myActionInfer();
+void myActionWebStream();
+void myResetMenuState();
+void myHandleMenuNavigation();
+void myDrawMenu();
+void myDispatchMenuCmd(const String& cmd);
+void myHandleStringCommand(const String& cmd);
+void mySdListDir(const String& path);
+void mySdReadText(const String& path);
+void mySdWriteText(const String& path, const String& content);
+void mySdReadJpeg(const String& path);
+void mySdReadBinaryHead(const String& path, uint16_t numBytes);
+bool mySdRemoveDirRecursive(const String& path, int& deleted);
+void myCamCaptureSend();
+String myNormPath(String p);
+void mySendHeatmap();
+
+// ======================================================
+// SETUP
+// ======================================================
+void setup() {
+  Serial.begin(115200);
+  while (!Serial && millis() < 3000);
+  delay(1000);
+  Serial.println("\n=== XIAO ESP32-S3 ML System Starting (v66) ===");
+  Serial.printf("Free heap:  %d bytes\n", ESP.getFreeHeap());
+  Serial.printf("Free PSRAM: %d bytes\n", ESP.getFreePsram());
+
+  pinMode(A0, INPUT);
+  u8g2.begin();
+
+  // v66: Suppress ESP-IDF log spam (especially FB_OVF from camera)
+  // Must be called before camera init so FB_OVF warnings are never emitted.
+  esp_log_level_set("*",          ESP_LOG_WARN);   // suppress INFO globally
+  esp_log_level_set("esp_camera", ESP_LOG_ERROR);  // suppress FB_OVF (WARN level)
+
+  // v66: Graceful SD init — does not hang if card absent.
+  // SD-dependent operations (collect, save, load) check mySDavailable before proceeding.
+  pinMode(21, OUTPUT);
+  digitalWrite(21, HIGH);
+  delay(100);
+  Serial.println("Checking SD card...");
+  SPI.begin();
+  SPI.setFrequency(400000);
+  mySDavailable = SD.begin(21, SPI, 400000, "/sd", 5, false);
+  if (!mySDavailable) {
+    SD.end();
+    Serial.println("No SD card — continuing without it (inference of baked weights still works)");
+    u8g2.firstPage();
+    do { u8g2.setFont(u8g2_font_6x10_tf); u8g2.drawStr(0, 15, "No SD card"); } while (u8g2.nextPage());
+    delay(2000);
+  } else {
+    Serial.println("SD card mounted");
+  }
+
+  // Load config from SD (uses compiled-in defaults if SD absent)
+  if (mySDavailable) {
+    myLoadConfig();
+    mySyncLegacyVars();
+  } else {
+    myApplyDefaultConfig();
+    mySyncLegacyVars();
+  }
+
+  // Shared RGB decode buffer (always 240x240 from camera)
+  myRgbBuffer = (uint8_t*)ps_malloc(240 * 240 * 3);
+  if (!myRgbBuffer) Serial.println("WARNING: RGB buffer alloc failed!");
+
+  // Camera
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk     = XCLK_GPIO_NUM;  config.pin_pclk  = PCLK_GPIO_NUM;
+  config.pin_vsync    = VSYNC_GPIO_NUM;  config.pin_href  = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn     = PWDN_GPIO_NUM;  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+  config.frame_size   = FRAMESIZE_240X240;
+  config.jpeg_quality = 12;
+  config.fb_count     = 1;
+  esp_camera_init(&config);
+  Serial.println("Camera initialized");
+
+  // v66: restore horizontal mirror (corrects left/right flip for typical mounting)
+  sensor_t* s = esp_camera_sensor_get();
+  if (s != nullptr) {
+    // s->set_vflip(s, 1);   // uncomment if image appears upside-down
+    s->set_hmirror(s, 1);    // mirror horizontally
+  }
+
+  // v66: He-init weights (baked or SD weights loaded below will override)
+  myAllocateMemory(true);
+
+  // v66: three-tier weight priority — He-init → baked-in → SD
+#ifdef USE_BAKED_WEIGHTS
+  memcpy(myConv1_w,  myModel_conv1_w,  myCfg.conv1Weights  * sizeof(float));
+  memcpy(myConv1_b,  myModel_conv1_b,  myCfg.conv1Filters  * sizeof(float));
+  memcpy(myConv2_w,  myModel_conv2_w,  myCfg.conv2Weights  * sizeof(float));
+  memcpy(myConv2_b,  myModel_conv2_b,  myCfg.conv2Filters  * sizeof(float));
+  memcpy(myOutput_w, myModel_output_w, myCfg.outputWeights * sizeof(float));
+  memcpy(myOutput_b, myModel_output_b, myCfg.numClasses    * sizeof(float));
+  Serial.println("[weights] Baked-in weights loaded from myWeights.h");
+  myWeightsTrained = true;
+#endif
+
+  if (mySDavailable && myLoadWeights(true)) {
+    Serial.println("[weights] SD weights loaded — overriding baked-in weights");
+    // myWeightsTrained is set inside myLoadWeights()
+  }
+
+  myLastActivityTime = millis();
+  myResetMenuState();
+  delay(2000);
+  Serial.println("System ready — Tap A0 to navigate, 3+ taps to select");
+  myDrawMenu();
+}
+
+void loop() {
+  myHandleMenuNavigation();
+
+  // v61: continuous camera stream — fires when CAM_STREAM active and menu is idle
+  if (myCamStreaming && !myIsSelected &&
+      (millis() - myLastCamStreamMs >= MY_CAM_STREAM_INTERVAL_MS)) {
+    myLastCamStreamMs = millis();
+    myCamCaptureSend();
+  }
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  CORE ML FUNCTIONS                                                       ██
+// ██  myAllocateMemory, mySaveWeights, myLoadWeights, myLoadImageFromFile     ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+// -------------------------------------------------------
+// Allocate (or reallocate) all ML buffers in PSRAM.
+// Always frees existing allocations before allocating
+// to prevent PSRAM leaks on repeated training sessions.
+//
+// resetMoments = true  → zero + reallocate all 12 Adam moment buffers
+// resetMoments = false → leave moment buffers untouched (warm Adam resume)
+// -------------------------------------------------------
+//void myAllocateMemory(bool resetMoments = true) {
+void myAllocateMemory(bool resetMoments) {
+
+  #define MY_REALLOC(ptr, size) \
+    do { if (ptr) { free(ptr); ptr = nullptr; } \
+         ptr = (float*)ps_malloc(size); } while(0)
+
+  // Weight buffers
+  MY_REALLOC(myConv1_w,       CONV1_WEIGHTS  * sizeof(float));
+  MY_REALLOC(myConv1_b,       CONV1_FILTERS  * sizeof(float));
+  MY_REALLOC(myConv2_w,       CONV2_WEIGHTS  * sizeof(float));
+  MY_REALLOC(myConv2_b,       CONV2_FILTERS  * sizeof(float));
+  MY_REALLOC(myOutput_w,      OUTPUT_WEIGHTS * sizeof(float));
+  MY_REALLOC(myOutput_b,      NUM_CLASSES    * sizeof(float));
+
+  // Gradient buffers
+  MY_REALLOC(myConv1_w_grad,  CONV1_WEIGHTS  * sizeof(float));
+  MY_REALLOC(myConv1_b_grad,  CONV1_FILTERS  * sizeof(float));
+  MY_REALLOC(myConv2_w_grad,  CONV2_WEIGHTS  * sizeof(float));
+  MY_REALLOC(myConv2_b_grad,  CONV2_FILTERS  * sizeof(float));
+  MY_REALLOC(myOutput_w_grad, OUTPUT_WEIGHTS * sizeof(float));
+  MY_REALLOC(myOutput_b_grad, NUM_CLASSES    * sizeof(float));
+
+  // Activation / intermediate buffers
+  MY_REALLOC(myConv1_output,  CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE * CONV1_FILTERS * sizeof(float));
+  MY_REALLOC(myPool1_output,  POOL1_OUTPUT_SIZE * POOL1_OUTPUT_SIZE * CONV1_FILTERS * sizeof(float));
+  MY_REALLOC(myConv2_output,  CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE * CONV2_FILTERS * sizeof(float));
+  MY_REALLOC(myDense_output,  NUM_CLASSES * sizeof(float));
+  MY_REALLOC(myDense_grad,    FLATTENED_SIZE * sizeof(float));
+  MY_REALLOC(myConv2_grad,    CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE * CONV2_FILTERS * sizeof(float));
+  MY_REALLOC(myPool1_grad,    POOL1_OUTPUT_SIZE * POOL1_OUTPUT_SIZE * CONV1_FILTERS * sizeof(float));
+  MY_REALLOC(myConv1_grad,    CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE * CONV1_FILTERS * sizeof(float));
+  MY_REALLOC(myInputBuffer,   INPUT_SIZE * INPUT_SIZE * INPUT_CHANNELS * sizeof(float));
+  MY_REALLOC(myDropoutMask,   FLATTENED_SIZE * sizeof(float));  // v58: dropout mask
+
+  #undef MY_REALLOC
+
+  // Adam moment buffers — only reset when requested
+  if (resetMoments) {
+    #define MY_REALLOC_ZERO(ptr, size) \
+      do { if (ptr) { free(ptr); ptr = nullptr; } \
+           ptr = (float*)ps_malloc(size); \
+           if (ptr) memset(ptr, 0, size); } while(0)
+
+    MY_REALLOC_ZERO(myConv1_w_m,  CONV1_WEIGHTS  * sizeof(float));
+    MY_REALLOC_ZERO(myConv1_w_v,  CONV1_WEIGHTS  * sizeof(float));
+    MY_REALLOC_ZERO(myConv1_b_m,  CONV1_FILTERS  * sizeof(float));
+    MY_REALLOC_ZERO(myConv1_b_v,  CONV1_FILTERS  * sizeof(float));
+    MY_REALLOC_ZERO(myConv2_w_m,  CONV2_WEIGHTS  * sizeof(float));
+    MY_REALLOC_ZERO(myConv2_w_v,  CONV2_WEIGHTS  * sizeof(float));
+    MY_REALLOC_ZERO(myConv2_b_m,  CONV2_FILTERS  * sizeof(float));
+    MY_REALLOC_ZERO(myConv2_b_v,  CONV2_FILTERS  * sizeof(float));
+    MY_REALLOC_ZERO(myOutput_w_m, OUTPUT_WEIGHTS * sizeof(float));
+    MY_REALLOC_ZERO(myOutput_w_v, OUTPUT_WEIGHTS * sizeof(float));
+    MY_REALLOC_ZERO(myOutput_b_m, NUM_CLASSES    * sizeof(float));
+    MY_REALLOC_ZERO(myOutput_b_v, NUM_CLASSES    * sizeof(float));
+
+    #undef MY_REALLOC_ZERO
+    Serial.println("[mem] Adam moments reset (cold start)");
+  } else {
+    Serial.println("[mem] Adam moments preserved (warm resume)");
+  }
+
+  // Always zero gradient and activation buffers
+  if (myConv1_w_grad)  memset(myConv1_w_grad,  0, CONV1_WEIGHTS  * sizeof(float));
+  if (myConv1_b_grad)  memset(myConv1_b_grad,  0, CONV1_FILTERS  * sizeof(float));
+  if (myConv2_w_grad)  memset(myConv2_w_grad,  0, CONV2_WEIGHTS  * sizeof(float));
+  if (myConv2_b_grad)  memset(myConv2_b_grad,  0, CONV2_FILTERS  * sizeof(float));
+  if (myOutput_w_grad) memset(myOutput_w_grad,  0, OUTPUT_WEIGHTS * sizeof(float));
+  if (myOutput_b_grad) memset(myOutput_b_grad,  0, NUM_CLASSES    * sizeof(float));
+
+  // Randomise weights (overwritten immediately when loading from file)
+  if (myConv1_w)  for (int i = 0; i < CONV1_WEIGHTS;  i++) myConv1_w[i]  = ((float)random(-1000,1000)) / 100000.0f;
+  if (myConv2_w)  for (int i = 0; i < CONV2_WEIGHTS;  i++) myConv2_w[i]  = ((float)random(-1000,1000)) / 100000.0f;
+  if (myOutput_w) for (int i = 0; i < OUTPUT_WEIGHTS;  i++) myOutput_w[i] = ((float)random(-1000,1000)) / 100000.0f;
+  if (myConv1_b)  memset(myConv1_b,  0, CONV1_FILTERS * sizeof(float));
+  if (myConv2_b)  memset(myConv2_b,  0, CONV2_FILTERS * sizeof(float));
+  if (myOutput_b) memset(myOutput_b, 0, NUM_CLASSES   * sizeof(float));
+
+  Serial.printf("[mem] Alloc done. Free PSRAM: %d bytes\n", ESP.getFreePsram());
+}
+
+// -------------------------------------------------------
+// Save weights to SD with ASCII JSON header block
+// -------------------------------------------------------
+void mySaveWeights() {
+  if (!mySDavailable) {
+    Serial.println("[weights] No SD card — cannot save weights");
+    return;
+  }
+  String filePath = "/header/" + myCfg.weightsFile;
+  if (!SD.exists("/header")) SD.mkdir("/header");
+  File f = SD.open(filePath.c_str(), FILE_WRITE);
+  if (!f) { Serial.println("[weights] ERROR: could not open file for writing"); return; }
+
+  f.println("--- WEIGHTS HEADER BEGIN ---");
+
+  JsonDocument doc;
+  doc["version"]       = CURRENT_VERSION;
+  doc["inputSize"]     = myCfg.inputSize;
+  doc["numClasses"]    = myCfg.numClasses;
+  doc["conv1Filters"]  = myCfg.conv1Filters;
+  doc["conv2Filters"]  = myCfg.conv2Filters;
+  doc["inputChannels"] = INPUT_CHANNELS;
+  doc["quantization"]  = "float32";
+  JsonArray labels = doc["labels"].to<JsonArray>();
+  for (int i = 0; i < myCfg.numLabels; i++) labels.add(myCfg.classLabels[i]);
+
+  serializeJsonPretty(doc, f);
+  f.println();
+  f.println("--- WEIGHTS HEADER END ---");
+  f.println();   // blank line before binary payload
+
+  f.write((uint8_t*)myConv1_w,  CONV1_WEIGHTS  * sizeof(float));
+  f.write((uint8_t*)myConv1_b,  CONV1_FILTERS  * sizeof(float));
+  f.write((uint8_t*)myConv2_w,  CONV2_WEIGHTS  * sizeof(float));
+  f.write((uint8_t*)myConv2_b,  CONV2_FILTERS  * sizeof(float));
+  f.write((uint8_t*)myOutput_w, OUTPUT_WEIGHTS * sizeof(float));
+  f.write((uint8_t*)myOutput_b, NUM_CLASSES    * sizeof(float));
+  f.close();
+  Serial.printf("[weights] Saved to %s\n", filePath.c_str());
+
+  // v66: also export a C header file for USE_BAKED_WEIGHTS compilation
+  myExportHeader();
+}
+
+// -------------------------------------------------------
+// v66: Export trained weights as a C header file.
+// Writes /header/myWeights.h — copy to sketch folder then
+// uncomment #define USE_BAKED_WEIGHTS to bake weights in.
+// Adapted from esp-all-menu-A0-image-train-infer42-28 v44.
+// -------------------------------------------------------
+void myExportHeader() {
+  if (!mySDavailable) {
+    Serial.println("[weights] No SD card — cannot export myWeights.h");
+    return;
+  }
+  if (!SD.exists("/header")) SD.mkdir("/header");
+  File file = SD.open("/header/myWeights.h", FILE_WRITE);
+  if (!file) {
+    Serial.println("[weights] ERROR: could not open /header/myWeights.h for writing");
+    return;
+  }
+
+  file.println("#ifndef MY_WEIGHTS_H");
+  file.println("#define MY_WEIGHTS_H");
+  file.println("// ======================================================");
+  file.println("// Auto-generated by myExportHeader() — do not edit manually.");
+  file.println("// Copy this file to your sketch folder, then:");
+  file.println("//   1. Update NUM_CLASSES and classLabels in the sketch to match training:");
+  file.printf( "//      numClasses = %d\n", myCfg.numClasses);
+  file.print(  "//      classLabels: ");
+  for (int i = 0; i < myCfg.numLabels; i++) {
+    file.printf("\"%s\"", myCfg.classLabels[i].c_str());
+    if (i < myCfg.numLabels - 1) file.print(", ");
+  }
+  file.println();
+  file.printf( "//      inputSize=%d  conv1Filters=%d  conv2Filters=%d  channels=%d\n",
+               myCfg.inputSize, myCfg.conv1Filters, myCfg.conv2Filters, INPUT_CHANNELS);
+  file.println("//   2. Uncomment:  #define USE_BAKED_WEIGHTS  at the top of the sketch");
+  file.println("//   3. Recompile and flash");
+  file.println("// ======================================================");
+
+  // Helper lambda to dump a float array as a C initializer
+  auto myDump = [&](const char* name, float* data, int size) {
+    file.printf("const float %s[] = {\n  ", name);
+    for (int i = 0; i < size; i++) {
+      file.print(data[i], 6); file.print("f");
+      if (i < size - 1) file.print(", ");
+      if ((i + 1) % 8 == 0) file.print("\n  ");
+    }
+    file.println("\n};");
+  };
+
+  myDump("myModel_conv1_w",  myConv1_w,  myCfg.conv1Weights);
+  myDump("myModel_conv1_b",  myConv1_b,  myCfg.conv1Filters);
+  myDump("myModel_conv2_w",  myConv2_w,  myCfg.conv2Weights);
+  myDump("myModel_conv2_b",  myConv2_b,  myCfg.conv2Filters);
+  myDump("myModel_output_w", myOutput_w, myCfg.outputWeights);
+  myDump("myModel_output_b", myOutput_b, myCfg.numClasses);
+
+  file.println("#endif // MY_WEIGHTS_H");
+  file.close();
+  Serial.println("[weights] Exported /header/myWeights.h — copy to sketch folder to bake in weights");
+}
+
+// -------------------------------------------------------
+// Load weights from SD — parses ASCII JSON header first.
+// resetMoments passed through to myAllocateMemory().
+// Returns true on success.
+// -------------------------------------------------------
+bool myLoadWeights(bool resetMoments) {
+  if (!mySDavailable) {
+    Serial.println("[weights] No SD card — skipping weight load");
+    return false;
+  }
+  String filePath = "/header/" + myCfg.weightsFile;
+  if (!SD.exists(filePath.c_str())) {
+    Serial.printf("[weights] File not found: %s\n", filePath.c_str());
+    return false;
+  }
+  File f = SD.open(filePath.c_str(), FILE_READ);
+  if (!f) { Serial.println("[weights] ERROR: could not open file"); return false; }
+
+  const char* BEGIN_TAG = "--- WEIGHTS HEADER BEGIN ---";
+  const char* END_TAG   = "--- WEIGHTS HEADER END ---";
+
+  // Scan for BEGIN sentinel
+  bool foundBegin = false;
+  while (f.available()) {
+    String line = f.readStringUntil('\n'); line.trim();
+    if (line == BEGIN_TAG) { foundBegin = true; break; }
+  }
+  if (!foundBegin) {
+    Serial.println("[weights] ERROR: BEGIN sentinel not found — old format or corrupt file");
+    f.close(); return false;
+  }
+
+  // Accumulate JSON until END sentinel
+  String jsonStr = "";
+  bool foundEnd = false;
+  while (f.available()) {
+    String line = f.readStringUntil('\n'); line.trim();
+    if (line == END_TAG) { foundEnd = true; break; }
+    jsonStr += line;
+  }
+  if (!foundEnd) {
+    Serial.println("[weights] ERROR: END sentinel not found — truncated file?");
+    f.close(); return false;
+  }
+
+  // Consume blank separator line
+  if (f.available()) f.readStringUntil('\n');
+
+  // Parse JSON header
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, jsonStr);
+  if (err) {
+    Serial.printf("[weights] JSON parse error: %s\n", err.c_str());
+    f.close(); return false;
+  }
+
+  // Check version
+  int binVersion = doc["version"] | 0;
+  if (binVersion < MIN_VERSION) {
+    Serial.printf("[weights] ERROR: .bin version %d < minimum %d — delete and retrain\n",
+                  binVersion, MIN_VERSION);
+    u8g2.firstPage();
+    do {
+      u8g2.setFont(u8g2_font_6x10_tf);
+      u8g2.drawStr(0, 10, "WEIGHTS ERROR");
+      u8g2.drawStr(0, 22, "Old .bin file!");
+      u8g2.setCursor(0, 34);
+      u8g2.print("v"); u8g2.print(binVersion);
+      u8g2.print(" < "); u8g2.print(MIN_VERSION);
+    } while (u8g2.nextPage());
+    delay(3000);
+    f.close(); return false;
+  }
+
+  // Check quantization
+  String quant = doc["quantization"] | "float32";
+  if (quant != "float32") {
+    Serial.printf("[weights] Quantization is '%s'.\n", quant.c_str());
+    Serial.println("[weights] Cannot train on int8 weights. Int8 inference path coming in Step 2.");
+    f.close(); return false;
+  }
+
+  // Validate architecture
+  int hInputSize  = doc["inputSize"]      | 0;
+  int hNumClasses = doc["numClasses"]     | 0;
+  int hConv1F     = doc["conv1Filters"]   | 0;
+  int hConv2F     = doc["conv2Filters"]   | 0;
+  int hChannels   = doc["inputChannels"]  | 3;   // default 3 for old files (RGB)
+  if (hInputSize  != myCfg.inputSize    ||
+      hNumClasses != myCfg.numClasses   ||
+      hConv1F     != myCfg.conv1Filters ||
+      hConv2F     != myCfg.conv2Filters ||
+      hChannels   != INPUT_CHANNELS) {
+    Serial.println("[weights] Architecture mismatch!");
+    Serial.printf("  File  : inputSize=%d numClasses=%d conv1F=%d conv2F=%d channels=%d\n",
+                  hInputSize, hNumClasses, hConv1F, hConv2F, hChannels);
+    Serial.printf("  Config: inputSize=%d numClasses=%d conv1F=%d conv2F=%d channels=%d\n",
+                  myCfg.inputSize, myCfg.numClasses, myCfg.conv1Filters, myCfg.conv2Filters, INPUT_CHANNELS);
+    f.close(); return false;
+  }
+
+  // Allocate buffers
+  myAllocateMemory(resetMoments);
+
+  // Read binary payload
+  f.read((uint8_t*)myConv1_w,  CONV1_WEIGHTS  * sizeof(float));
+  f.read((uint8_t*)myConv1_b,  CONV1_FILTERS  * sizeof(float));
+  f.read((uint8_t*)myConv2_w,  CONV2_WEIGHTS  * sizeof(float));
+  f.read((uint8_t*)myConv2_b,  CONV2_FILTERS  * sizeof(float));
+  f.read((uint8_t*)myOutput_w, OUTPUT_WEIGHTS * sizeof(float));
+  f.read((uint8_t*)myOutput_b, NUM_CLASSES    * sizeof(float));
+  f.close();
+
+  Serial.printf("[weights] Loaded float32 from %s\n", filePath.c_str());
+  myWeightsTrained = true;   // v66: mark weights as valid for inference
+  return true;
+}
+
+// -------------------------------------------------------
+// Load a JPEG from SD, decode, resize to INPUT_SIZE,
+// normalise to [0,1].
+// RGB mode:   stores 3 floats per pixel (R,G,B interleaved)
+// Grayscale:  stores 1 float per pixel (luminance average)
+// -------------------------------------------------------
+bool myLoadImageFromFile(const char* path, float* buf) {
+  if (!myRgbBuffer) { Serial.println("[img] myRgbBuffer not allocated!"); return false; }
+
+  File f = SD.open(path, FILE_READ);
+  if (!f) { Serial.printf("[img] Cannot open: %s\n", path); return false; }
+  size_t jpgLen = f.size();
+
+  // Only the compressed JPEG bytes need a temporary allocation —
+  // the RGB decode goes straight into the pre-allocated global myRgbBuffer.
+  uint8_t* jpgBuf = (uint8_t*)ps_malloc(jpgLen);
+  if (!jpgBuf) { Serial.println("[img] ps_malloc failed for JPEG"); f.close(); return false; }
+  f.read(jpgBuf, jpgLen);
+  f.close();
+
+  bool ok = fmt2rgb888(jpgBuf, jpgLen, PIXFORMAT_JPEG, myRgbBuffer);
+  free(jpgBuf);
+  if (!ok) { Serial.printf("[img] JPEG decode failed: %s\n", path); return false; }
+
+  const int MAX_DIM = 240;
+  int inSize = myCfg.inputSize;
+
+  if (myCfg.useGrayscale) {
+    // Store 1 float per pixel: luminance = (R + G + B) / 3
+    for (int y = 0; y < inSize; y++) {
+      int sy = min((int)((y + 0.5f) * MAX_DIM / inSize), MAX_DIM - 1);
+      for (int x = 0; x < inSize; x++) {
+        int sx     = min((int)((x + 0.5f) * MAX_DIM / inSize), MAX_DIM - 1);
+        int srcIdx = (sy * MAX_DIM + sx) * 3;
+        buf[y * inSize + x] = (myRgbBuffer[srcIdx]   +
+                               myRgbBuffer[srcIdx+1] +
+                               myRgbBuffer[srcIdx+2]) * (0.003921569f / 3.0f);
+      }
+    }
+  } else {
+    // Store 3 floats per pixel: R, G, B interleaved
+    for (int y = 0; y < inSize; y++) {
+      int sy = min((int)((y + 0.5f) * MAX_DIM / inSize), MAX_DIM - 1);
+      for (int x = 0; x < inSize; x++) {
+        int sx     = min((int)((x + 0.5f) * MAX_DIM / inSize), MAX_DIM - 1);
+        int srcIdx = (sy * MAX_DIM + sx) * 3;
+        int dstIdx = (y  * inSize  + x ) * 3;
+        buf[dstIdx]   = myRgbBuffer[srcIdx]   * 0.003921569f;
+        buf[dstIdx+1] = myRgbBuffer[srcIdx+1] * 0.003921569f;
+        buf[dstIdx+2] = myRgbBuffer[srcIdx+2] * 0.003921569f;
+      }
+    }
+  }
+  return true;
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 1: IMAGE COLLECTION                                                ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+// -------------------------------------------------------
+// Draw the camera image onto the OLED (downsampled).
+// Overlays a small count number in the top-left corner.
+// -------------------------------------------------------
+void myDisplayImageOnOLED(camera_fb_t* fb, int imageCount) {
+  if (!myRgbBuffer) { Serial.println("OLED: myRgbBuffer not allocated"); return; }
+  if (!fmt2rgb888(fb->buf, fb->len, fb->format, myRgbBuffer)) {
+    Serial.println("OLED: JPEG convert failed"); return;
+  }
+  size_t myRgbBufSize = fb->width * fb->height * 3;
+  int oW = u8g2.getDisplayWidth();
+  int oH = u8g2.getDisplayHeight();
+  int scX = fb->width  / oW;
+  int scY = fb->height / oH;
+
+  u8g2.firstPage();
+  do {
+    for (int ox = 0; ox < oW; ox++) {
+      for (int oy = 0; oy < oH; oy++) {
+        size_t pi = ((oy * scY) * fb->width + (ox * scX)) * 3;
+        if (pi + 2 < myRgbBufSize) {
+          uint8_t bright = (myRgbBuffer[pi] + myRgbBuffer[pi+1] + myRgbBuffer[pi+2]) / 3;
+          if (bright > 100) u8g2.drawPixel(ox, oy);
+        }
+      }
+    }
+    u8g2.setFont(u8g2_font_ncenB10_tr);
+    u8g2.setColorIndex(0); u8g2.drawBox(0, 0, 20, 15);
+    u8g2.setColorIndex(1); u8g2.setCursor(3, 10);
+    u8g2.print(String(imageCount));
+  } while (u8g2.nextPage());
+}
+
+// -------------------------------------------------------
+// Show live camera preview on OLED.
+// Used during image collection and inference.
+// Optionally overlays a short label string (pass nullptr for none).
+// -------------------------------------------------------
+void myDisplayLiveCameraOnOLED(camera_fb_t* fb, const char* overlayLabel = nullptr) {
+  if (!fb || !myRgbBuffer) return;
+
+  if (fmt2rgb888(fb->buf, fb->len, fb->format, myRgbBuffer)) {
+    size_t myRgbBufSize = fb->width * fb->height * 3;
+    int oW  = u8g2.getDisplayWidth();
+    int oH  = u8g2.getDisplayHeight();
+    int scX = fb->width  / oW;
+    int scY = fb->height / oH;
+
+    u8g2.firstPage();
+    do {
+      for (int ox = 0; ox < oW; ox++) {
+        for (int oy = 0; oy < oH; oy++) {
+          size_t pi = ((oy * scY) * fb->width + (ox * scX)) * 3;
+          if (pi + 2 < myRgbBufSize) {
+            uint8_t bright = (myRgbBuffer[pi] + myRgbBuffer[pi+1] + myRgbBuffer[pi+2]) / 3;
+            if (bright > 100) u8g2.drawPixel(ox, oy);
+          }
+        }
+      }
+      if (overlayLabel) {
+        u8g2.setFont(u8g2_font_5x7_tf);
+        u8g2.setColorIndex(0);
+        u8g2.drawBox(0, oH - 9, oW, 9);
+        u8g2.setColorIndex(1);
+        u8g2.drawStr(1, oH - 1, overlayLabel);
+      }
+    } while (u8g2.nextPage());
+  }
+}
+
+void myActionCollect(int classIdx) {
+  if (!mySDavailable) {
+    Serial.println("[collect] No SD card — cannot collect images");
+    u8g2.firstPage();
+    do { u8g2.setFont(u8g2_font_6x10_tf); u8g2.drawStr(0, 15, "No SD card"); } while (u8g2.nextPage());
+    delay(2000);
+    myResetMenuState();
+    return;
+  }
+  Serial.printf("\n>>> Collection mode: %s\n", myClassLabels[classIdx].c_str());
+  Serial.println("  TAP (1-2 taps) = Capture image");
+  Serial.println("  LONG PRESS (3+ taps) = Exit to menu");
+  Serial.println("  Serial: T=capture  L=exit");
+
+  myResetTouchState();
+
+  String path = "/images/" + myClassLabels[classIdx];
+  if (!SD.exists("/images")) SD.mkdir("/images");
+  if (!SD.exists(path))      SD.mkdir(path);
+
+  // Count existing images per class for display
+  int counts[8] = {0};
+  for (int i = 0; i < myCfg.numClasses; i++) {
+    File root = SD.open("/images/" + myClassLabels[i]);
+    if (root) {
+      while (File file = root.openNextFile()) {
+        if (!file.isDirectory()) {
+          String fn = String(file.name());
+          if (fn.endsWith(".jpg") || fn.endsWith(".JPG")) counts[i]++;
+        }
+        file.close();
+      }
+      root.close();
+    }
+  }
+
+  unsigned long lastPreview = 0;
+  bool shouldCapture = false;
+
+  while (true) {
+    // Live preview every 100 ms
+    if (millis() - lastPreview > 100) {
+      camera_fb_t* fb = esp_camera_fb_get();
+      if (fb) {
+        myDisplayLiveCameraOnOLED(fb, myClassLabels[classIdx].c_str());
+        esp_camera_fb_return(fb);
+      }
+      lastPreview = millis();
+    }
+
+    // Serial input
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'l' || c == 'L') { myResetMenuState(); return; }
+      else if (c == 't' || c == 'T') shouldCapture = true;
+    }
+
+    // Touch input
+    int touchAction = myCheckTouchInput();
+    if (touchAction == 2) { Serial.println("Exiting collection"); myResetMenuState(); return; }
+    else if (touchAction == 1) shouldCapture = true;
+
+    // Capture
+    if (shouldCapture) {
+      shouldCapture = false;
+      camera_fb_t* fb = esp_camera_fb_get();
+      if (fb) {
+        String fileName = path + "/img_" + String(millis()) + ".jpg";
+        File file = SD.open(fileName, FILE_WRITE);
+        if (file) {
+          file.write(fb->buf, fb->len);
+          file.close();
+          counts[classIdx]++;
+          Serial.printf("Saved: %s (Total: %d)\n", fileName.c_str(), counts[classIdx]);
+          myDisplayImageOnOLED(fb, counts[classIdx]);
+          // v59: send the captured frame to the webpage via WebSerial
+          myBase64SendFrame(fb);
+          delay(300);
+        }
+        esp_camera_fb_return(fb);
+      }
+    }
+    delay(10);
+  }
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 1b: WEBSERIAL STREAMING                                            ██
+// ██  myBase64SendFrame — encodes one JPEG frame as FRAME_B64:<b64>\n         ██
+// ██  myActionWebStream — menu item 6: continuous live stream to webpage      ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+// Base64 alphabet
+static const char myB64Chars[] =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+// -------------------------------------------------------
+// Encode a camera frame buffer as base64 and send:
+//   FRAME_B64:<base64jpeg>\n
+//
+// The TorchJS v83 webpage looks for exactly this prefix on
+// each serial line and decodes the JPEG for display / capture.
+// Called from:
+//   - myActionCollect: after every successful SD save
+//   - myActionWebStream: every ~1s in streaming mode
+// -------------------------------------------------------
+void myBase64SendFrame(camera_fb_t* fb) {
+  if (!fb || fb->len == 0) return;
+  const uint8_t* src = fb->buf;
+  size_t len = fb->len;
+
+  Serial.print("FRAME_B64:");
+  size_t i = 0;
+  while (i < len) {
+    uint8_t b0 =                    src[i];
+    uint8_t b1 = (i + 1 < len) ? src[i+1] : 0;
+    uint8_t b2 = (i + 2 < len) ? src[i+2] : 0;
+    Serial.print(myB64Chars[ b0 >> 2 ]);
+    Serial.print(myB64Chars[ ((b0 & 0x03) << 4) | (b1 >> 4) ]);
+    Serial.print((i+1 < len) ? myB64Chars[ ((b1 & 0x0F) << 2) | (b2 >> 6) ] : '=');
+    Serial.print((i+2 < len) ? myB64Chars[ b2 & 0x3F ]                       : '=');
+    i += 3;
+    if ((i % 540) == 0) yield();   // keep watchdog happy on large frames
+  }
+  Serial.println();   // terminates the FRAME_B64 line — webpage splits on \n
+}
+
+// -------------------------------------------------------
+// Menu item 6 — WebStream
+//
+// Streams live JPEG frames to the TorchJS webpage at ~1 fps.
+// The webpage shows them in its ESP32 preview pane and the
+// user can click "Add to Class" to capture them as training
+// samples — exactly like the standalone companion sketch but
+// built into the main firmware.
+//
+// Serial commands while streaming:
+//   f / F    — send one frame immediately (on-demand)
+//   t / T    — exit to menu (matches other action exit keys)
+//   l / L    — exit to menu
+//   q        — cycle JPEG quality (6 / 10 / 15 / 20)
+//   s        — print status (free PSRAM, current quality index)
+//
+// Touch: any tap exits.
+// OLED:  shows "WebStream" + frame counter.
+// -------------------------------------------------------
+void myActionWebStream() {
+  Serial.println("\n>>> WebStream mode");
+  Serial.println("  Streaming frames as FRAME_B64 for TorchJS webpage");
+  Serial.println("  Commands: f=frame now  q=quality  s=status  t/l=exit");
+  Serial.println("  Touch: tap to exit");
+
+  myResetTouchState();
+
+  // JPEG quality presets (same as companion sketch)
+  const int qualPresets[] = { 6, 10, 15, 20 };
+  const char* qualNames[] = { "6-best", "10-good", "15-fast", "20-small" };
+  const int qualCount = 4;
+  int qualIdx = 1;   // default: quality 10
+
+  // Warm-up: discard a couple of frames so auto-exposure settles
+  for (int i = 0; i < 3; i++) {
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (fb) esp_camera_fb_return(fb);
+    delay(80);
+  }
+
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.drawStr(0, 12, "WebStream");
+    u8g2.drawStr(0, 24, "Sending...");
+  } while (u8g2.nextPage());
+
+  int frameCount = 0;
+  unsigned long lastFrameMs = 0;
+  const unsigned long frameInterval = 1000;   // ~1 fps — fast enough for capture, gentle on Serial
+
+  while (true) {
+
+    // ---- Serial command check ----
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 't' || c == 'T' || c == 'l' || c == 'L') {
+        Serial.println("[webstream] Exit to menu.");
+        myResetMenuState();
+        return;
+      } else if (c == 'f' || c == 'F') {
+        // On-demand frame — send immediately regardless of interval
+        camera_fb_t* fb = esp_camera_fb_get();
+        if (fb) {
+          myBase64SendFrame(fb);
+          esp_camera_fb_return(fb);
+          frameCount++;
+        }
+        continue;
+      } else if (c == 'q' || c == 'Q') {
+        qualIdx = (qualIdx + 1) % qualCount;
+        sensor_t* s = esp_camera_sensor_get();
+        if (s) s->set_quality(s, qualPresets[qualIdx]);
+        Serial.printf("[webstream] JPEG quality → %s\n", qualNames[qualIdx]);
+      } else if (c == 's' || c == 'S') {
+        Serial.printf("[webstream] frames=%d  quality=%s  freePSRAM=%d\n",
+                      frameCount, qualNames[qualIdx], (int)ESP.getFreePsram());
+      }
+    }
+
+    // ---- Touch exit ----
+    int touchAction = myCheckTouchInput();
+    if (touchAction > 0) {
+      Serial.println("[webstream] Touch exit.");
+      myResetMenuState();
+      return;
+    }
+
+    // ---- Timed frame send ----
+    unsigned long now = millis();
+    if (now - lastFrameMs >= frameInterval) {
+      lastFrameMs = now;
+      camera_fb_t* fb = esp_camera_fb_get();
+      if (fb) {
+        myBase64SendFrame(fb);
+        esp_camera_fb_return(fb);
+        frameCount++;
+      }
+
+      // OLED update every frame
+      u8g2.firstPage();
+      do {
+        u8g2.setFont(u8g2_font_6x10_tf);
+        u8g2.drawStr(0, 12, "WebStream");
+        u8g2.setCursor(0, 24); u8g2.print("Frames: "); u8g2.print(frameCount);
+        u8g2.setCursor(0, 34); u8g2.print("q="); u8g2.print(qualPresets[qualIdx]);
+        u8g2.print(" t/l=exit");
+      } while (u8g2.nextPage());
+    }
+
+    delay(20);   // small yield to keep touch + serial responsive between frames
+  }
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 2: TRAINING (FORWARD/BACKWARD PASS, OPTIMIZER)                     ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+// ======================================================
+// FORWARD PASS
+// ======================================================
+void myForwardPass(float* input, float* logits) {
+  // Conv1 — supports 1 (grayscale) or 3 (RGB) input channels
+  int ch = INPUT_CHANNELS;
+  for (int f = 0; f < CONV1_FILTERS; f++) {
+    int ob = f * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE;
+    for (int y = 0; y < CONV1_OUTPUT_SIZE; y++) {
+      for (int x = 0; x < CONV1_OUTPUT_SIZE; x++) {
+        float sum = 0;
+        for (int ky = 0; ky < 3; ky++) {
+          for (int kx = 0; kx < 3; kx++) {
+            int inPos = ((y+ky)*INPUT_SIZE+(x+kx))*ch;
+            int wPos  = f*(9*ch) + ky*3*ch + kx*ch;
+            for (int c = 0; c < ch; c++)
+              sum += input[inPos+c] * myConv1_w[wPos+c];
+          }
+        }
+        myConv1_output[ob + y*CONV1_OUTPUT_SIZE + x] = leaky_relu(clip_value(sum + myConv1_b[f]));
+      }
+    }
+  }
+
+  // Pool1
+  for (int f = 0; f < CONV1_FILTERS; f++) {
+    int ib = f*CONV1_OUTPUT_SIZE*CONV1_OUTPUT_SIZE;
+    int ob = f*POOL1_OUTPUT_SIZE*POOL1_OUTPUT_SIZE;
+    for (int y = 0; y < POOL1_OUTPUT_SIZE; y++) {
+      for (int x = 0; x < POOL1_OUTPUT_SIZE; x++) {
+        int iy = y*2, ix = x*2;
+        float maxVal = myConv1_output[ib + iy*CONV1_OUTPUT_SIZE + ix];
+        maxVal = max(maxVal, myConv1_output[ib + iy*CONV1_OUTPUT_SIZE     + ix+1]);
+        maxVal = max(maxVal, myConv1_output[ib + (iy+1)*CONV1_OUTPUT_SIZE + ix]);
+        maxVal = max(maxVal, myConv1_output[ib + (iy+1)*CONV1_OUTPUT_SIZE + ix+1]);
+        myPool1_output[ob + y*POOL1_OUTPUT_SIZE + x] = maxVal;
+      }
+    }
+  }
+
+  // Conv2
+  for (int f = 0; f < CONV2_FILTERS; f++) {
+    int ob = f*CONV2_OUTPUT_SIZE*CONV2_OUTPUT_SIZE;
+    for (int y = 0; y < CONV2_OUTPUT_SIZE; y++) {
+      for (int x = 0; x < CONV2_OUTPUT_SIZE; x++) {
+        float sum = 0;
+        for (int c = 0; c < CONV1_FILTERS; c++) {
+          int ib = c*POOL1_OUTPUT_SIZE*POOL1_OUTPUT_SIZE;
+          for (int ky = 0; ky < 3; ky++) {
+            for (int kx = 0; kx < 3; kx++) {
+              sum += myPool1_output[ib + (y+ky)*POOL1_OUTPUT_SIZE + (x+kx)] *
+                     myConv2_w[f*36 + c*9 + ky*3 + kx];
+            }
+          }
+        }
+        myConv2_output[ob + y*CONV2_OUTPUT_SIZE + x] = leaky_relu(clip_value(sum + myConv2_b[f]));
+      }
+    }
+  }
+
+  // Dense layer — float running sum.
+  // double Kahan was ~3x slower on ESP32 (no double FPU) and unnecessary
+  // because clip_value(±50) bounds the output anyway.
+  for (int c = 0; c < NUM_CLASSES; c++) {
+    float sum = 0;
+    for (int i = 0; i < FLATTENED_SIZE; i++)
+      sum += myConv2_output[i] * myOutput_w[c*FLATTENED_SIZE + i];
+    myDense_output[c] = clip_value(sum + myOutput_b[c], -50, 50);
+  }
+
+  // Softmax
+  float mx = myDense_output[0];
+  for (int i = 1; i < NUM_CLASSES; i++) if (myDense_output[i] > mx) mx = myDense_output[i];
+  float expSum = 0;
+  for (int i = 0; i < NUM_CLASSES; i++) expSum += exp(myDense_output[i] - mx);
+  for (int i = 0; i < NUM_CLASSES; i++) {
+    logits[i]         = myDense_output[i];
+    myDense_output[i] = exp(myDense_output[i] - mx) / expSum;
+  }
+}
+
+// ======================================================
+// BACKWARD PASS
+// ======================================================
+void myBackwardDense(int label) {
+  // v53 Fix #2/#3: Use += so all images in the batch accumulate into the gradient.
+  // The caller zeros these buffers via memset at the start of each batch (Fix #6).
+  // myDense_grad is still pre-zeroed here because it is a propagation signal
+  // (not a weight gradient) that must be fresh for each image's backward pass.
+  memset(myDense_grad, 0, FLATTENED_SIZE * sizeof(float));
+  for (int c = 0; c < NUM_CLASSES; c++) {
+    float error = myDense_output[c] - (c == label ? 1.0f : 0.0f);
+    for (int i = 0; i < FLATTENED_SIZE; i++) {
+      myOutput_w_grad[c*FLATTENED_SIZE+i] += error * myConv2_output[i];  // += accumulates batch
+      myDense_grad[i] += error * myOutput_w[c*FLATTENED_SIZE+i];
+    }
+    myOutput_b_grad[c] += error;  // += accumulates batch
+  }
+  // v58: Gate gradient back through dropout mask — zeroes dropped units, scales survivors
+  for (int i = 0; i < FLATTENED_SIZE; i++)
+    myDense_grad[i] *= myDropoutMask[i];
+}
+
+void myBackwardConv2() {
+  for (int i = 0; i < FLATTENED_SIZE; i++)
+    myConv2_grad[i] = myDense_grad[i] * leaky_relu_deriv(myConv2_output[i]);
+
+  // v53 Fix #2/#3: Removed per-image memset for weight/bias grads — the batch-level
+  // memset (Fix #6) zeros them before the first image; we accumulate with += here.
+  // myPool1_grad is a propagation signal (like myDense_grad), so we still zero it
+  // fresh for each image's backward pass to avoid cross-image contamination.
+  memset(myPool1_grad, 0, POOL1_OUTPUT_SIZE * POOL1_OUTPUT_SIZE * CONV1_FILTERS * sizeof(float));
+
+  for (int f = 0; f < CONV2_FILTERS; f++) {
+    int ob = f*CONV2_OUTPUT_SIZE*CONV2_OUTPUT_SIZE;
+    for (int y = 0; y < CONV2_OUTPUT_SIZE; y++) {
+      for (int x = 0; x < CONV2_OUTPUT_SIZE; x++) {
+        float grad = myConv2_grad[ob + y*CONV2_OUTPUT_SIZE + x];
+        myConv2_b_grad[f] += grad;
+        for (int c = 0; c < CONV1_FILTERS; c++) {
+          int ib = c*POOL1_OUTPUT_SIZE*POOL1_OUTPUT_SIZE;
+          for (int ky = 0; ky < 3; ky++) {
+            for (int kx = 0; kx < 3; kx++) {
+              int pi = ib + (y+ky)*POOL1_OUTPUT_SIZE + (x+kx);
+              int wi = f*36 + c*9 + ky*3 + kx;
+              myConv2_w_grad[wi] += grad * myPool1_output[pi];
+              myPool1_grad[pi]   += grad * myConv2_w[wi];
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void myBackwardPool1() {
+  memset(myConv1_grad, 0, CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE * CONV1_FILTERS * sizeof(float));
+  for (int f = 0; f < CONV1_FILTERS; f++) {
+    int ib = f*CONV1_OUTPUT_SIZE*CONV1_OUTPUT_SIZE;
+    int ob = f*POOL1_OUTPUT_SIZE*POOL1_OUTPUT_SIZE;
+    for (int y = 0; y < POOL1_OUTPUT_SIZE; y++) {
+      for (int x = 0; x < POOL1_OUTPUT_SIZE; x++) {
+        int iy = y*2, ix = x*2;
+        float poolVal = myPool1_output[ob + y*POOL1_OUTPUT_SIZE + x];
+        float grad    = myPool1_grad  [ob + y*POOL1_OUTPUT_SIZE + x];
+        if (myConv1_output[ib + iy    *CONV1_OUTPUT_SIZE + ix  ] == poolVal) myConv1_grad[ib + iy    *CONV1_OUTPUT_SIZE + ix  ] += grad;
+        if (myConv1_output[ib + iy    *CONV1_OUTPUT_SIZE + ix+1] == poolVal) myConv1_grad[ib + iy    *CONV1_OUTPUT_SIZE + ix+1] += grad;
+        if (myConv1_output[ib + (iy+1)*CONV1_OUTPUT_SIZE + ix  ] == poolVal) myConv1_grad[ib + (iy+1)*CONV1_OUTPUT_SIZE + ix  ] += grad;
+        if (myConv1_output[ib + (iy+1)*CONV1_OUTPUT_SIZE + ix+1] == poolVal) myConv1_grad[ib + (iy+1)*CONV1_OUTPUT_SIZE + ix+1] += grad;
+      }
+    }
+  }
+}
+
+void myBackwardConv1() {
+  for (int i = 0; i < CONV1_OUTPUT_SIZE*CONV1_OUTPUT_SIZE*CONV1_FILTERS; i++)
+    myConv1_grad[i] *= leaky_relu_deriv(myConv1_output[i]);
+
+  // v53 Fix #2/#3: Removed per-image memset — batch-level zeroing (Fix #6) handles this.
+  // Weight grads accumulate with += across all images in the batch.
+
+  int ch = INPUT_CHANNELS;
+  for (int f = 0; f < CONV1_FILTERS; f++) {
+    int ob = f*CONV1_OUTPUT_SIZE*CONV1_OUTPUT_SIZE;
+    for (int y = 0; y < CONV1_OUTPUT_SIZE; y++) {
+      for (int x = 0; x < CONV1_OUTPUT_SIZE; x++) {
+        float grad = myConv1_grad[ob + y*CONV1_OUTPUT_SIZE + x];
+        myConv1_b_grad[f] += grad;
+        for (int ky = 0; ky < 3; ky++) {
+          for (int kx = 0; kx < 3; kx++) {
+            int inPos = ((y+ky)*INPUT_SIZE + (x+kx)) * ch;
+            int wPos  = f*(9*ch) + ky*3*ch + kx*ch;
+            for (int c = 0; c < ch; c++)
+              myConv1_w_grad[wPos+c] += grad * myInputBuffer[inPos+c];
+          }
+        }
+      }
+    }
+  }
+}
+
+// ======================================================
+// ADAM OPTIMIZER
+// ======================================================
+void myAdamUpdate(float* w, float* g, float* m, float* v, int size, float lr_t) {
+  const float b1 = 0.9f, b2 = 0.999f, eps = 1e-6f;   // eps=1e-6 avoids float32 underflow
+  for (int i = 0; i < size; i++) {
+    m[i]  = b1*m[i] + (1-b1)*g[i];
+    v[i]  = b2*v[i] + (1-b2)*g[i]*g[i];
+    w[i] -= lr_t * m[i] / (sqrt(v[i]) + eps);
+    w[i]  = clip_value(w[i], -10, 10);
+  }
+}
+
+void myUpdateWeights(int step) {
+  // Pre-compute bias-corrected learning rate once for all parameter groups
+  const float b1 = 0.9f, b2 = 0.999f;
+  float lr_t = LEARNING_RATE * sqrt(1.0f - pow(b2, step)) / (1.0f - pow(b1, step));
+  myAdamUpdate(myConv1_w,  myConv1_w_grad,  myConv1_w_m,  myConv1_w_v,  CONV1_WEIGHTS,  lr_t);
+  myAdamUpdate(myConv1_b,  myConv1_b_grad,  myConv1_b_m,  myConv1_b_v,  CONV1_FILTERS,  lr_t);
+  myAdamUpdate(myConv2_w,  myConv2_w_grad,  myConv2_w_m,  myConv2_w_v,  CONV2_WEIGHTS,  lr_t);
+  myAdamUpdate(myConv2_b,  myConv2_b_grad,  myConv2_b_m,  myConv2_b_v,  CONV2_FILTERS,  lr_t);
+  myAdamUpdate(myOutput_w, myOutput_w_grad, myOutput_w_m, myOutput_w_v, OUTPUT_WEIGHTS, lr_t);
+  myAdamUpdate(myOutput_b, myOutput_b_grad, myOutput_b_m, myOutput_b_v, NUM_CLASSES,    lr_t);
+}
+
+// -------------------------------------------------------
+// Augmentation helpers — operate in-place on float buffer
+// (INPUT_SIZE x INPUT_SIZE x 3, RGB interleaved, values 0-1)
+// -------------------------------------------------------
+
+// Horizontal flip: mirror pixels left-right (works for 1 or 3 channels)
+void myAugFlip(float* buf) {
+  int sz = myCfg.inputSize;
+  int ch = INPUT_CHANNELS;
+  for (int y = 0; y < sz; y++) {
+    for (int x = 0; x < sz / 2; x++) {
+      int a = (y * sz + x)         * ch;
+      int b = (y * sz + (sz-1-x))  * ch;
+      for (int c = 0; c < ch; c++) {
+        float tmp = buf[a+c];
+        buf[a+c]  = buf[b+c];
+        buf[b+c]  = tmp;
+      }
+    }
+  }
+}
+
+// Brightness jitter: multiply all pixels by factor, clamp to [0,1]
+void myAugBrightness(float* buf, float factor) {
+  int n = myCfg.inputSize * myCfg.inputSize * INPUT_CHANNELS;
+  for (int i = 0; i < n; i++)
+    buf[i] = constrain(buf[i] * factor, 0.0f, 1.0f);
+}
+
+// Train one image already loaded into myInputBuffer.
+// Returns loss contribution and whether prediction was correct.
+// Accumulates gradients — caller must zero grad buffers beforehand.
+// v58: Inverted dropout applied after conv2, before dense layer.
+//      myForwardPass populates myConv2_output, then dropout masks it,
+//      then dense + softmax re-run so loss is consistent with masked activations.
+//      dropoutRate=0.0 is a safe no-op (mask=1.0 everywhere).
+void myTrainOneImage(int label, float &lossOut, bool &correctOut) {
+  float logits[8];
+  // Full forward pass — populates myConv2_output correctly
+  myForwardPass(myInputBuffer, logits);
+
+  // v58: Inverted dropout on flattened conv2 output
+  if (myCfg.dropoutRate > 0.0f) {
+    float keepProb = 1.0f - myCfg.dropoutRate;
+    float scale    = 1.0f / keepProb;
+    for (int i = 0; i < FLATTENED_SIZE; i++) {
+      float r = (float)(esp_random() & 0xFFFF) / 65535.0f;
+      if (r < myCfg.dropoutRate) {
+        myDropoutMask[i]  = 0.0f;
+        myConv2_output[i] = 0.0f;
+      } else {
+        myDropoutMask[i]  = scale;
+        myConv2_output[i] *= scale;
+      }
+    }
+    // Re-run dense layer with masked activations
+    for (int c = 0; c < NUM_CLASSES; c++) {
+      float sum = 0;
+      for (int i = 0; i < FLATTENED_SIZE; i++)
+        sum += myConv2_output[i] * myOutput_w[c * FLATTENED_SIZE + i];
+      myDense_output[c] = clip_value(sum + myOutput_b[c], -50, 50);
+    }
+    // Re-run softmax
+    float mx = myDense_output[0];
+    for (int i = 1; i < NUM_CLASSES; i++) if (myDense_output[i] > mx) mx = myDense_output[i];
+    float expSum = 0;
+    for (int i = 0; i < NUM_CLASSES; i++) expSum += expf(myDense_output[i] - mx);
+    for (int i = 0; i < NUM_CLASSES; i++) myDense_output[i] = expf(myDense_output[i] - mx) / expSum;
+  } else {
+    // No dropout — mask is 1.0 everywhere (backward multiply is a no-op)
+    for (int i = 0; i < FLATTENED_SIZE; i++) myDropoutMask[i] = 1.0f;
+  }
+
+  lossOut    = -log(max(myDense_output[label], 1e-7f));
+  int pred   = 0;
+  for (int j = 1; j < NUM_CLASSES; j++)
+    if (myDense_output[j] > myDense_output[pred]) pred = j;
+  correctOut = (pred == label);
+  myBackwardDense(label);
+  myBackwardConv2();
+  myBackwardPool1();
+  myBackwardConv1();
+}
+//
+// MOMENT / ALLOC BEHAVIOUR:
+//   Menu entry        : resetMoments=true  — weights from SD or random, Adam cold
+//   T=retrain tap     : NO realloc — weights and moments stay warm in RAM
+//   L exit + re-entry : next call from menu → resetMoments=true again
+//
+// EXIT BEHAVIOUR:
+//   IN PROGRESS : L/X or 3+ taps → exit WITHOUT saving
+//   COMPLETE    : L/X or 3+ taps → exit to menu
+//                 T or 1-2 taps  → train again (warm Adam)
+// ======================================================
+void myActionTrain() {
+  if (!mySDavailable) {
+    Serial.println("[train] No SD card — cannot train (images must be on SD)");
+    u8g2.firstPage();
+    do { u8g2.setFont(u8g2_font_6x10_tf); u8g2.drawStr(0, 15, "No SD card"); } while (u8g2.nextPage());
+    delay(2000);
+    myResetMenuState();
+    return;
+  }
+  Serial.println("\n>>> Training mode");
+  Serial.println("  During training : S or tap       = Save and exit early");
+  Serial.println("  During training : L or 3+ taps   = Exit WITHOUT saving");
+  Serial.println("  After completion: T or tap        = Train again (warm resume)");
+  Serial.println("                    L or 3+ taps   = Exit to menu");
+
+  myResetTouchState();
+
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.drawStr(0, 12, "TRAINING MODE");
+    u8g2.drawStr(0, 24, "Loading...");
+  } while (u8g2.nextPage());
+
+  bool freshEntry = true;   // true only on first pass through outer loop
+
+  while (true) {
+
+    if (freshEntry) {
+      freshEntry = false;
+      myAdamStep = 0;   // reset step counter on fresh weights (cold start)
+      if (myLoadWeights(true)) {
+        Serial.println("[train] Loaded saved weights (moments + step reset)");
+      } else {
+        myAllocateMemory(true);
+        Serial.println("[train] No saved weights — fresh random init");
+      }
+    } else {
+      Serial.println("[train] Warm resume — keeping weights + Adam moments + step counter");
+    }
+
+    // Load training data list
+    myTrainingData.clear();
+    for (int i = 0; i < myCfg.numClasses; i++) {
+      File root = SD.open("/images/" + myClassLabels[i]);
+      if (root) {
+        while (File file = root.openNextFile()) {
+          if (!file.isDirectory()) {
+            String fn = String(file.name());
+            if (fn.endsWith(".jpg") || fn.endsWith(".JPG"))
+              myTrainingData.push_back({file.path(), i});
+          }
+          file.close();
+        }
+        root.close();
+      }
+    }
+
+    if (myTrainingData.empty()) {
+      u8g2.firstPage();
+      do { u8g2.drawStr(0, 20, "No Images!"); } while (u8g2.nextPage());
+      delay(2000);
+      myResetMenuState();
+      return;
+    }
+
+    // ---- Split off validation set ----
+    // The last DEFAULT_VALIDATION_IMAGES images (after sorting by path) per class
+    // are held out and never trained on.  They are reported to Serial after each epoch.
+    // Sort entire list by path so the split is deterministic across warm restarts.
+    std::sort(myTrainingData.begin(), myTrainingData.end(),
+              [](const TrainingItem& a, const TrainingItem& b){ return a.path < b.path; });
+
+    std::vector<TrainingItem> myValidationData;
+    int valPerClass = myCfg.validationImages;
+    if (valPerClass > 0) {
+      // Collect the last valPerClass items per class (list is sorted, so just scan from end)
+      int counts[8] = {0};
+      // Count how many per class exist
+      for (auto& item : myTrainingData) counts[item.label]++;
+      // Warn if any class will be entirely consumed by the validation split
+      for (int c = 0; c < myCfg.numClasses; c++) {
+        if (counts[c] > 0 && counts[c] <= valPerClass) {
+          Serial.printf("[train] WARNING: class '%s' has %d image(s) but validationImages=%d "
+                        "— all images consumed by validation, none left for training!\n",
+                        myClassLabels[c].c_str(), counts[c], valPerClass);
+        }
+      }
+      // Determine cutoff index per class: keep last valPerClass for validation
+      int skip[8] = {0};  // how many from the end of each class go to validation
+      for (int c = 0; c < myCfg.numClasses; c++)
+        skip[c] = min(valPerClass, counts[c]);
+
+      std::vector<TrainingItem> trainOnly;
+      int seen[8] = {0};
+      // Walk list in reverse; assign last skip[c] of each class to validation
+      for (int i = (int)myTrainingData.size() - 1; i >= 0; i--) {
+        int c = myTrainingData[i].label;
+        if (seen[c] < skip[c]) {
+          myValidationData.push_back(myTrainingData[i]);
+          seen[c]++;
+        } else {
+          trainOnly.push_back(myTrainingData[i]);
+        }
+      }
+      myTrainingData = trainOnly;
+      Serial.printf("[train] Validation set: %d images  Training set: %d images\n",
+                    (int)myValidationData.size(), (int)myTrainingData.size());
+    }
+
+    int total           = myTrainingData.size();
+    if (total == 0) {
+      Serial.println("[train] ERROR: no training images after validation split!");
+      myResetMenuState();
+      return;
+    }
+
+    // ---- Optional: preload training images into PSRAM ----
+    // On warm restarts the cache survives; on first entry (freshEntry was true) it is rebuilt.
+    // If not all images fit, the cache window cycles forward by its capacity each restart.
+    int imageFloats = INPUT_SIZE * INPUT_SIZE * INPUT_CHANNELS;
+    size_t imageSizeBytes = imageFloats * sizeof(float);
+
+    if (myCfg.imagesToPsram) {
+      // Free old cache only on cold start (freshEntry just became false above)
+      // For warm restarts we keep whatever is there and just advance the offset.
+      bool isColdStart = (myImgCache.slots == nullptr);
+
+      if (isColdStart) {
+        // How many images can we fit?
+        size_t freePsram   = ESP.getFreePsram();
+        int    maxFit      = (int)(freePsram * 8 / 10 / imageSizeBytes); // use ≤80% of free
+        int    cap         = min(maxFit, total);
+        myImgCache.capacity = cap;
+        myImgCache.complete = (cap >= total);
+        myImgCache.offset   = 0;
+
+        myImgCache.slots  = (float**)ps_malloc(cap * sizeof(float*));
+        if (!myImgCache.slots) {
+          Serial.println("[psram] WARNING: cache alloc failed — falling back to per-image SD load");
+          myImgCache.slots    = nullptr;
+          myImgCache.capacity = 0;
+        } else {
+          memset(myImgCache.slots, 0, cap * sizeof(float*));
+        }
+      } else {
+        // Warm restart — if cache is incomplete, advance the window
+        if (!myImgCache.complete) {
+          // Free old image data (slot pointer array stays allocated)
+          for (int i = 0; i < myImgCache.count; i++) {
+            if (myImgCache.slots[i]) { free(myImgCache.slots[i]); myImgCache.slots[i] = nullptr; }
+          }
+          myImgCache.count  = 0;
+          myImgCache.offset = (myImgCache.offset + myImgCache.capacity) % total;
+        }
+      }
+
+      // Fill cache slots from offset
+      if (myImgCache.capacity > 0 && myImgCache.count == 0) {
+        Serial.printf("[psram] Loading %d/%d training images into PSRAM (offset=%d)...\n",
+                      myImgCache.capacity, total, myImgCache.offset);
+        u8g2.firstPage();
+        do {
+          u8g2.setFont(u8g2_font_6x10_tf);
+          u8g2.drawStr(0, 12, "Loading PSRAM");
+          u8g2.setCursor(0, 24); u8g2.print("0/"); u8g2.print(myImgCache.capacity);
+        } while (u8g2.nextPage());
+
+        for (int s = 0; s < myImgCache.capacity; s++) {
+          int idx = (myImgCache.offset + s) % total;
+          TrainingItem& item = myTrainingData[idx];
+          myImgCache.slots[s] = (float*)ps_malloc(imageSizeBytes);
+          if (!myImgCache.slots[s]) {
+            Serial.printf("[psram] ps_malloc failed at slot %d — cache truncated\n", s);
+            myImgCache.capacity = s;
+            break;
+          }
+          if (!myLoadImageFromFile(item.path.c_str(), myImgCache.slots[s])) {
+            free(myImgCache.slots[s]);
+            myImgCache.slots[s] = nullptr;  // slot left null; batch loop falls back to SD
+          }
+          if (s % 5 == 0) {
+            u8g2.firstPage();
+            do {
+              u8g2.setFont(u8g2_font_6x10_tf);
+              u8g2.drawStr(0, 12, "Loading PSRAM");
+              u8g2.setCursor(0, 24); u8g2.print(s+1); u8g2.print("/"); u8g2.print(myImgCache.capacity);
+            } while (u8g2.nextPage());
+          }
+        }
+        myImgCache.count = myImgCache.capacity;
+        Serial.printf("[psram] Cache ready: %d images. Free PSRAM: %d bytes\n",
+                      myImgCache.count, (int)ESP.getFreePsram());
+      }
+    } else {
+      // imagesToPsram=false — free any existing cache and leave it empty
+      myFreeImageCache();
+    }
+
+    int batchesPerEpoch = (total + BATCH_SIZE - 1) / BATCH_SIZE;
+    // Augmentation adds a second pass through all images each epoch
+    int passesPerEpoch  = myCfg.useAugmentation ? 2 : 1;
+    int totalBatches    = TARGET_EPOCHS * batchesPerEpoch * passesPerEpoch;
+
+    Serial.printf("[train] %d images  %d epochs  augmentation=%s  validationImages=%d  %d total batches\n",
+                  total, TARGET_EPOCHS,
+                  myCfg.useAugmentation ? "ON" : "OFF",
+                  (int)myValidationData.size(),
+                  totalBatches);
+
+    std::vector<int> indices;
+    for (int i = 0; i < total; i++) indices.push_back(i);
+
+    float runningLoss = 0;
+    int   lossCount   = 0;
+    bool  earlyExit   = false;    // true = exit WITHOUT saving (long press / L key)
+    bool  earlyExitSave = false;  // true = exit WITH saving (single tap / S key)
+    int   globalBatch = 0;   // counts across all passes for OLED display
+
+    // ---- Training loop — epochs ----
+    for (int epoch = 0; epoch < TARGET_EPOCHS && !earlyExit && !earlyExitSave; epoch++) {
+
+      // Shuffle once per epoch
+      Serial.printf("\n--- Epoch %d/%d ---\n", epoch + 1, TARGET_EPOCHS);
+      for (int i = total - 1; i > 0; i--) {
+        int j = random(i + 1);
+        int tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
+      }
+
+      // ---- Two passes: pass 0 = originals, pass 1 = augmented (if enabled) ----
+      for (int pass = 0; pass < passesPerEpoch && !earlyExit && !earlyExitSave; pass++) {
+
+        if (pass == 1)
+          Serial.printf("  [aug pass]\n");
+
+        for (int batchIdx = 0; batchIdx < batchesPerEpoch && !earlyExit && !earlyExitSave; batchIdx++) {
+
+          // Exit checks
+          if (Serial.available()) {
+            char c = Serial.read();
+            if (c == 'l' || c == 'L' || c == 'x' || c == 'X') {
+              Serial.println("[train] Exiting without saving.");
+              earlyExit = true; break;
+            } else if (c == 's' || c == 'S') {
+              Serial.println("[train] Saving and exiting early.");
+              earlyExitSave = true; break;
+            }
+          }
+          myCheckTouchBackground();
+          int peekAction = myPeekTouchAction();
+          if (peekAction == 2) {
+            myCheckTouchInput();
+            Serial.println("[train] Long press — exiting without saving.");
+            earlyExit = true; break;
+          } else if (peekAction == 1) {
+            myCheckTouchInput();
+            Serial.println("[train] Single tap — saving and exiting early.");
+            earlyExitSave = true; break;
+          }
+
+          int batchStart   = batchIdx * BATCH_SIZE;
+          int batchEnd     = min(batchStart + BATCH_SIZE, total);
+          float batchLoss  = 0;
+          int correctCount = 0;
+          int batchItems   = 0;
+
+          // v53 Fix #6: Zero ALL gradient buffers before accumulating this batch
+          memset(myConv1_w_grad,  0, CONV1_WEIGHTS  * sizeof(float));
+          memset(myConv1_b_grad,  0, CONV1_FILTERS  * sizeof(float));
+          memset(myConv2_w_grad,  0, CONV2_WEIGHTS  * sizeof(float));
+          memset(myConv2_b_grad,  0, CONV2_FILTERS  * sizeof(float));
+          memset(myOutput_w_grad, 0, OUTPUT_WEIGHTS * sizeof(float));
+          memset(myOutput_b_grad, 0, NUM_CLASSES    * sizeof(float));
+
+          for (int i = batchStart; i < batchEnd; i++) {
+            int idx = indices[i];
+            TrainingItem& img = myTrainingData[idx];
+
+            // Use PSRAM cache if available; fall back to SD load
+            bool loaded = false;
+            if (myCfg.imagesToPsram && myImgCache.capacity > 0) {
+              // Map training index → cache slot (accounting for circular offset)
+              int cacheSlot = (idx - myImgCache.offset + total) % total;
+              if (cacheSlot < myImgCache.count && myImgCache.slots[cacheSlot] != nullptr) {
+                memcpy(myInputBuffer, myImgCache.slots[cacheSlot], imageSizeBytes);
+                loaded = true;
+              }
+            }
+            if (!loaded) {
+              if (!myLoadImageFromFile(img.path.c_str(), myInputBuffer)) continue;
+            }
+
+            if (pass == 1) {
+              // Augmentation pass: random flip and/or brightness
+              if (random(2)) myAugFlip(myInputBuffer);
+              if (random(2)) {
+                // Random brightness factor 0.7 – 1.3
+                float factor = 0.7f + (random(601) / 1000.0f);  // 0.7 to 1.3
+                myAugBrightness(myInputBuffer, factor);
+              }
+            }
+
+            float lossVal; bool correct;
+            myTrainOneImage(img.label, lossVal, correct);
+            batchLoss += lossVal;
+            if (correct) correctCount++;
+            batchItems++;
+
+            if (i % 3 == 0) myCheckTouchBackground();
+          }
+
+          if (batchItems == 0) continue;
+
+          // Normalise gradients by actual batch size
+          float batchScale = 1.0f / batchItems;
+          for (int i = 0; i < CONV1_WEIGHTS;  i++) myConv1_w_grad[i]  *= batchScale;
+          for (int i = 0; i < CONV1_FILTERS;  i++) myConv1_b_grad[i]  *= batchScale;
+          for (int i = 0; i < CONV2_WEIGHTS;  i++) myConv2_w_grad[i]  *= batchScale;
+          for (int i = 0; i < CONV2_FILTERS;  i++) myConv2_b_grad[i]  *= batchScale;
+          for (int i = 0; i < OUTPUT_WEIGHTS; i++) myOutput_w_grad[i] *= batchScale;
+          for (int i = 0; i < NUM_CLASSES;    i++) myOutput_b_grad[i] *= batchScale;
+
+          myUpdateWeights(++myAdamStep);
+          globalBatch++;
+
+          float avgLoss  = batchLoss / batchItems;
+          float batchAcc = (float)correctCount / batchItems;
+          runningLoss += avgLoss;
+          lossCount++;
+
+          if (globalBatch % 5 == 0) {
+            float displayLoss = runningLoss / lossCount;
+            u8g2.firstPage();
+            do {
+              u8g2.setFont(u8g2_font_6x10_tf);
+              u8g2.setCursor(0, 12); u8g2.print("Training...");
+              u8g2.setCursor(0, 24);
+              u8g2.print("B:"); u8g2.print(globalBatch);
+              u8g2.print("/"); u8g2.print(totalBatches);
+              u8g2.setCursor(0, 36);
+              u8g2.print("L:"); u8g2.print(displayLoss, 3);
+              u8g2.print(" A:"); u8g2.print((int)(batchAcc*100)); u8g2.print("%");
+            } while (u8g2.nextPage());
+            runningLoss = 0; lossCount = 0;
+          }
+
+          if (globalBatch % 10 == 0) {
+            Serial.printf("Batch %d/%d — Loss: %.4f  Acc: %.1f%%\n",
+                          globalBatch, totalBatches, avgLoss, batchAcc*100);
+          }
+        } // batchIdx
+      } // pass
+
+      // ---- Validation reporting (end of epoch) ----
+      // Reuses myInputBuffer and myDense_output — safe because the ESP32 is single-threaded.
+      if (!earlyExit && !earlyExitSave && !myValidationData.empty()) {
+        int valCorrect = 0;
+        float valLossSum = 0.0f;
+        int   valCount   = 0;
+        for (auto& vitem : myValidationData) {
+          bool loadOk = myLoadImageFromFile(vitem.path.c_str(), myInputBuffer);
+          if (!loadOk) continue;
+          float logits[8];
+          myForwardPass(myInputBuffer, logits);
+          valLossSum += -log(max(myDense_output[vitem.label], 1e-7f));
+          int pred = 0;
+          for (int j = 1; j < NUM_CLASSES; j++)
+            if (myDense_output[j] > myDense_output[pred]) pred = j;
+          if (pred == vitem.label) valCorrect++;
+          valCount++;
+        }
+        if (valCount > 0) {
+          Serial.printf("  [val] epoch %d/%d — Loss: %.4f  Acc: %.1f%%  (%d/%d correct)\n",
+                        epoch + 1, TARGET_EPOCHS,
+                        valLossSum / valCount,
+                        100.0f * valCorrect / valCount,
+                        valCorrect, valCount);
+        }
+      }
+
+    } // epoch
+    // ---- End training loop ----
+
+    if (earlyExit) {
+      // Long press / L key — discard progress
+      myFreeImageCache();
+      u8g2.firstPage();
+      do {
+        u8g2.setFont(u8g2_font_6x10_tf);
+        u8g2.drawStr(0, 12, "CANCELLED");
+        u8g2.drawStr(0, 24, "Not saved");
+      } while (u8g2.nextPage());
+      delay(1500);
+      myResetMenuState();
+      return;
+    }
+
+    // Completed normally OR single-tap early save — save weights
+    if (earlyExitSave) {
+      Serial.println("\n--- Training interrupted — saving current weights ---");
+    } else {
+      Serial.println("\n--- Training Complete ---");
+    }
+    myFreeImageCache();
+    mySaveWeights();
+    myWeightsTrained = true;   // v66: weights now valid for inference
+
+    u8g2.firstPage();
+    do {
+      u8g2.setFont(u8g2_font_6x10_tf);
+      u8g2.drawStr(0, 12, earlyExitSave ? "STOPPED+Saved" : "DONE! Saved.");
+      u8g2.drawStr(0, 24, "T/tap:Again");
+      u8g2.drawStr(0, 36, "L/3taps:Exit");
+    } while (u8g2.nextPage());
+
+    myResetTouchState();
+    Serial.println("[train] Done. T=train again (warm)  L=exit");
+
+    while (true) {
+      if (Serial.available()) {
+        char c = Serial.read();
+        if (c == 'l' || c == 'L' || c == 'x' || c == 'X') { myResetMenuState(); return; }
+        else if (c == 't' || c == 'T') { Serial.println("[train] Warm retrain..."); break; }
+      }
+      int touchAction = myCheckTouchInput();
+      if (touchAction == 2) { myResetMenuState(); return; }
+      else if (touchAction == 1) { Serial.println("[train] Warm retrain..."); break; }
+      delay(10);
+    }
+    // freshEntry stays false → top of outer loop skips weight realloc.
+    // Cache was freed above; the PSRAM load block will rebuild it on the next pass.
+  }
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 3: INFERENCE                                                       ██
+// ██                                                                          ██
+// ██  Live camera feed shown on OLED every frame.                             ██
+// ██  Prediction label overlaid on OLED every 10 frames.                     ██
+// ██  Full inference result printed to Serial every frame.                   ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+void myActionInfer() {
+  Serial.println("\n>>> Inference mode");
+  Serial.println("  T or L = exit to menu");
+  Serial.println("  WebSerial: HEATMAP_ON / HEATMAP_OFF to toggle conv2 heatmap");
+
+  myResetTouchState();
+
+  // v66: if weights are already in RAM (just trained or baked), skip SD reload.
+  // If not trained yet, try loading from SD. If that also fails, bail out.
+  if (!myWeightsTrained) {
+    if (!myLoadWeights(true)) {
+      u8g2.firstPage();
+      do { u8g2.drawStr(0, 15, "NOT TRAINED!"); } while (u8g2.nextPage());
+      delay(2000);
+      myResetMenuState();
+      return;
+    }
+    // myLoadWeights() sets myWeightsTrained = true on success
+  } else {
+    Serial.println("[infer] Using weights already in RAM");
+  }
+
+  // Pre-compute resize lookup tables (once per inference session)
+  int* sy_lookup = (int*)ps_malloc(myCfg.inputSize * sizeof(int));
+  int* sx_lookup = (int*)ps_malloc(myCfg.inputSize * sizeof(int));
+  if (!sy_lookup || !sx_lookup) {
+    Serial.println("ERROR: lookup table alloc failed!");
+    if (sy_lookup) free(sy_lookup);
+    if (sx_lookup) free(sx_lookup);
+    myResetMenuState();
+    return;
+  }
+  for (int i = 0; i < INPUT_SIZE; i++) {
+    sy_lookup[i] = min((int)((i + 0.5f) * 240.0f / INPUT_SIZE), 239);
+    sx_lookup[i] = min((int)((i + 0.5f) * 240.0f / INPUT_SIZE), 239);
+  }
+  Serial.println("Lookup tables ready. Running inference...");
+
+  int frameIndex = 0;
+  int pred       = 0;
+
+  // Build a short overlay string: label + confidence, refreshed every 10 frames
+  char overlayBuf[24] = "...";
+
+  while (true) {
+    unsigned long frameStart = millis();
+
+    // Serial exit
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 't' || c == 'T' || c == 'l' || c == 'L') {
+        free(sy_lookup); free(sx_lookup);
+        myResetMenuState(); return;
+      }
+    }
+
+    // Get camera frame
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (!fb) { delay(10); continue; }
+
+    if (!myRgbBuffer) {
+      Serial.println("ERROR: myRgbBuffer not allocated!");
+      esp_camera_fb_return(fb); delay(10); continue;
+    }
+
+    // Convert JPEG → RGB
+    bool converted = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, myRgbBuffer);
+
+    if (converted) {
+      // OLED update only on frame 0 of each 10-frame window — keeps FPS high
+      if (frameIndex == 0) {
+        myDisplayLiveCameraOnOLED(fb, overlayBuf);
+      }
+
+      // Build normalised input for inference
+      if (myCfg.useGrayscale) {
+        // Grayscale: 1 float per pixel
+        for (int y = 0; y < INPUT_SIZE; y++) {
+          int sy        = sy_lookup[y];
+          int sy_offset = sy * 240;
+          int dst_y_off = y * INPUT_SIZE;
+          for (int x = 0; x < INPUT_SIZE; x++) {
+            int srcIdx = (sy_offset + sx_lookup[x]) * 3;
+            myInputBuffer[dst_y_off + x] =
+              (myRgbBuffer[srcIdx] + myRgbBuffer[srcIdx+1] + myRgbBuffer[srcIdx+2])
+              * (0.003921569f / 3.0f);
+          }
+        }
+      } else {
+        // RGB: 3 floats per pixel
+        for (int y = 0; y < INPUT_SIZE; y++) {
+          int sy        = sy_lookup[y];
+          int sy_offset = sy * 240;
+          int dst_y_off = y * INPUT_SIZE;
+          for (int x = 0; x < INPUT_SIZE; x++) {
+            int srcIdx = (sy_offset + sx_lookup[x]) * 3;
+            int dstIdx = (dst_y_off  + x) * 3;
+            myInputBuffer[dstIdx]   = myRgbBuffer[srcIdx]   * 0.003921569f;
+            myInputBuffer[dstIdx+1] = myRgbBuffer[srcIdx+1] * 0.003921569f;
+            myInputBuffer[dstIdx+2] = myRgbBuffer[srcIdx+2] * 0.003921569f;
+          }
+        }
+      }
+
+      // Run inference
+      float myLogits[8];
+      myForwardPass(myInputBuffer, myLogits);
+
+      pred = 0;
+      for (int i = 1; i < NUM_CLASSES; i++)
+        if (myDense_output[i] > myDense_output[pred]) pred = i;
+
+      // v66: send conv2 heatmap if enabled (toggle via HEATMAP_ON / HEATMAP_OFF)
+      if (myHeatmapEnabled) mySendHeatmap();
+
+      // Serial output every frame
+      unsigned long frameMs = millis() - frameStart;
+      Serial.printf("Frame %d: %lums (%.1fFPS) | %s %.0f%% | All:",
+                    frameIndex+1, frameMs, 1000.0f/frameMs,
+                    myClassLabels[pred].c_str(), myDense_output[pred]*100);
+      for (int i = 0; i < NUM_CLASSES; i++)
+        Serial.printf(" %.0f%%", myDense_output[i]*100);
+      Serial.println();
+    }
+
+    esp_camera_fb_return(fb);
+    frameIndex++;
+
+    // Every 10 frames: refresh overlay string and check touch
+    if (frameIndex >= 10) {
+      // Update overlay: "LabelName 87%"
+      snprintf(overlayBuf, sizeof(overlayBuf), "%s %d%%",
+               myClassLabels[pred].c_str(),
+               (int)(myDense_output[pred] * 100));
+
+      // Touch exit
+      int touchVal = myReadTouch();
+      if (touchVal > myThresholdPress) {
+        Serial.println("Touch — exiting inference");
+        delay(200);
+        free(sy_lookup); free(sx_lookup);
+        myResetMenuState(); return;
+      }
+
+      frameIndex = 0;
+    }
+  }
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 3b: CONV2 HEATMAP STREAMING (v66)                                  ██
+// ██                                                                          ██
+// ██  mySendHeatmap() — called from myActionInfer() when myHeatmapEnabled.    ██
+// ██  Serialises myConv2_output as a max-across-filters grayscale map,        ██
+// ██  base64 encoded, sent as one serial line:                                ██
+// ██    HEATMAP:<rows>x<cols>:<base64-bytes>\n                                ██
+// ██  The webpage decodes it and renders as a coloured overlay on the          ██
+// ██  preview canvas.  Toggle with HEATMAP_ON / HEATMAP_OFF WebSerial cmds.  ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+// -------------------------------------------------------
+// Send one conv2 heatmap frame over WebSerial.
+//
+// myConv2_output layout: [filter][row][col]
+//   filter stride = CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE
+//
+// For each spatial position (row, col) we take the max
+// activation across all CONV2_FILTERS filters, then
+// normalise the entire map to 0–255 uint8.
+//
+// Output: HEATMAP:<rows>x<cols>:<base64-bytes>\n
+// -------------------------------------------------------
+void mySendHeatmap() {
+  if (!myConv2_output) return;   // safety: buffer must be allocated
+
+  int rows = myCfg.conv2OutputSize;
+  int cols = myCfg.conv2OutputSize;
+  int spatialSize = rows * cols;
+
+  // Allocate a temporary byte buffer on the stack (27x27 = 729 bytes max at defaults)
+  // For safety we use heap if size could exceed typical stack budget.
+  uint8_t* heatmap = (uint8_t*)malloc(spatialSize);
+  if (!heatmap) {
+    Serial.println("[heatmap] malloc failed");
+    return;
+  }
+
+  // --- Step 1: max-pool across all Conv2 filters at each spatial position ---
+  float minVal =  1e9f;
+  float maxVal = -1e9f;
+  float* scratch = (float*)malloc(spatialSize * sizeof(float));
+  if (!scratch) { free(heatmap); return; }
+
+  for (int pos = 0; pos < spatialSize; pos++) {
+    float maxAct = -1e9f;
+    for (int f = 0; f < myCfg.conv2Filters; f++) {
+      float v = myConv2_output[f * spatialSize + pos];
+      if (v > maxAct) maxAct = v;
+    }
+    scratch[pos] = maxAct;
+    if (maxAct < minVal) minVal = maxAct;
+    if (maxAct > maxVal) maxVal = maxAct;
+  }
+
+  // --- Step 2: normalise to 0–255 ---
+  float range = maxVal - minVal;
+  if (range < 1e-6f) range = 1e-6f;   // avoid divide-by-zero on flat maps
+  for (int pos = 0; pos < spatialSize; pos++) {
+    float norm = (scratch[pos] - minVal) / range;
+    heatmap[pos] = (uint8_t)(norm * 255.0f + 0.5f);
+  }
+  free(scratch);
+
+  // --- Step 3: base64 encode using mbedtls ---
+  size_t b64OutLen = 0;
+  mbedtls_base64_encode(nullptr, 0, &b64OutLen, heatmap, spatialSize);
+  uint8_t* b64 = (uint8_t*)malloc(b64OutLen + 1);
+  if (!b64) { free(heatmap); Serial.println("[heatmap] b64 malloc failed"); return; }
+  mbedtls_base64_encode(b64, b64OutLen + 1, &b64OutLen, heatmap, spatialSize);
+  b64[b64OutLen] = 0;
+  free(heatmap);
+
+  // --- Step 4: send as one WebSerial line ---
+  Serial.printf("HEATMAP:%dx%d:", rows, cols);
+  Serial.write(b64, b64OutLen);
+  Serial.println();
+  free(b64);
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 4: MENU SYSTEM                                                     ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+void myResetMenuState() {
+  myIsSelected = false;
+  myResetTouchState();
+  myLastActivityTime = millis();
+  myDrawMenu();
+}
+
+void myDrawMenu() {
+  Serial.println("\n=== MENU ===");
+  for (int i = 1; i <= myTotalItems; i++) {
+    String label;
+    if      (i <= myCfg.numClasses)      label = myClassLabels[i-1];
+    else if (i == myCfg.numClasses + 1)  label = "Train";
+    else if (i == myCfg.numClasses + 2)  label = "Infer";
+    Serial.printf("%s %d. %s\n", (i == myMenuIndex) ? " >" : "  ", i, label.c_str());
+  }
+  //Serial.println("Commands: t=next  l=select  1-6=direct");
+  Serial.println("Commands: t=next  l=select  1-5=direct  6=WebStream");
+
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.drawStr(0, 8, "TAP:Next HOLD:Ok");
+    int startItem = (myMenuIndex <= myCfg.numClasses) ? 1 : myMenuIndex - 2;
+    for (int i = 0; i < 3; i++) {
+      int cur = startItem + i;
+      if (cur > myTotalItems) break;
+      String label;
+      if      (cur <= myCfg.numClasses)      label = myClassLabels[cur-1];
+      else if (cur == myCfg.numClasses + 1)  label = "Train";
+      else if (cur == myCfg.numClasses + 2)  label = "Infer";
+      else                                    label = "WebStream";
+      int y = 18 + i * 9;
+      u8g2.drawStr(0, y, (cur == myMenuIndex ? "> " + label : "  " + label).c_str());
+    }
+  } while (u8g2.nextPage());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  myDispatchMenuCmd — run a single resolved command string
+//  Called by myHandleMenuNavigation once a complete '\n'-terminated line
+//  has been received.  Handles both 1-char menu shortcuts and full string
+//  commands (SD_LIST, CAM_CAPTURE, etc.).
+// ─────────────────────────────────────────────────────────────────────────────
+void myDispatchMenuCmd(const String& cmd) {
+  unsigned long now = millis();
+
+  // ── Single-char menu shortcuts ──
+  if (cmd.length() == 1) {
+    char c = cmd[0];
+
+    if (c >= '1' && c <= '6') {
+      // Direct menu jump — only when not already in a mode
+      if (!myIsSelected) {
+        int newIndex = c - '0';
+        if (newIndex <= myTotalItems) {
+          myMenuIndex = newIndex;
+          myIsSelected = true;
+          myLastActivityTime = now;
+          if      (myMenuIndex == 1) myActionCollect(0);
+          else if (myMenuIndex == 2) myActionCollect(1);
+          else if (myMenuIndex == 3) myActionCollect(2);
+          else if (myMenuIndex == 4) myActionTrain();
+          else if (myMenuIndex == 5) myActionInfer();
+          else if (myMenuIndex == 6) myActionWebStream();
+        }
+      }
+      return;
+    }
+
+    if (c == 't' || c == 'T') {
+      if (!myIsSelected && (now - myLastTapTime > myTapCooldown)) {
+        myMenuIndex++;
+        if (myMenuIndex > myTotalItems) myMenuIndex = 1;
+        myDrawMenu();
+        myLastTapTime = now;
+        myLastActivityTime = now;
+      }
+      return;
+    }
+
+    if (c == 'l' || c == 'L') {
+      if (!myIsSelected) {
+        myIsSelected = true;
+        myLastActivityTime = now;
+        if      (myMenuIndex == 1) myActionCollect(0);
+        else if (myMenuIndex == 2) myActionCollect(1);
+        else if (myMenuIndex == 3) myActionCollect(2);
+        else if (myMenuIndex == 4) myActionTrain();
+        else if (myMenuIndex == 5) myActionInfer();
+        else if (myMenuIndex == 6) myActionWebStream();
+      } else {
+        // l/L while in a mode = exit back to menu
+        myResetMenuState();
+      }
+      return;
+    }
+
+    // 's'/'x' — generic exit from any mode
+    if (c == 's' || c == 'S' || c == 'x' || c == 'X') {
+      if (myIsSelected) myResetMenuState();
+      return;
+    }
+
+    // Unknown single char — ignore silently
+    return;
+  }
+
+  // ── Multi-char string commands (SD browser, camera, etc.) ──
+  myHandleStringCommand(cmd);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  myHandleMenuNavigation — called from loop() every iteration
+//
+//  Design:
+//    • Drains the entire hardware serial buffer each call (no per-char break).
+//      This is safe because serial reads are just memcpy from a UART FIFO.
+//    • Accumulates bytes into mySerialLineBuf until '\n' or '\r' is seen,
+//      then trims and dispatches the complete line.
+//    • Both single-char shortcuts (t, l, 1-6) and long commands
+//      (SD_LIST:/path, CAM_CAPTURE:240X240:12, …) use the same path.
+//    • Touch input is checked after serial — it is NOT blocked by serial.
+// ─────────────────────────────────────────────────────────────────────────────
+void myHandleMenuNavigation() {
+  unsigned long now = millis();
+
+  // ── Drain entire serial buffer ──────────────────────────────────────────
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+
+    if (c == '\n' || c == '\r') {
+      mySerialLineBuf.trim();
+      if (mySerialLineBuf.length() > 0) {
+        String cmd = mySerialLineBuf;
+        mySerialLineBuf = "";
+        myDispatchMenuCmd(cmd);
+      }
+      // continue — consume any adjacent \r\n pairs
+    } else {
+      mySerialLineBuf += c;
+      if (mySerialLineBuf.length() > 512) {
+        // Safety: discard runaway line (e.g. binary garbage on connect)
+        mySerialLineBuf = "";
+      }
+    }
+  }
+
+  // ── Touch input (only when not inside a blocking mode) ──────────────────
+  if (!myIsSelected) {
+    int touchAction = myCheckTouchInput();
+    if (touchAction == 1) {
+      if (now - myLastTapTime > myTapCooldown) {
+        myMenuIndex++;
+        if (myMenuIndex > myTotalItems) myMenuIndex = 1;
+        myDrawMenu();
+        myLastTapTime = now;
+        myLastActivityTime = now;
+      }
+    } else if (touchAction == 2) {
+      myIsSelected = true;
+      myLastActivityTime = now;
+      if      (myMenuIndex == 1) myActionCollect(0);
+      else if (myMenuIndex == 2) myActionCollect(1);
+      else if (myMenuIndex == 3) myActionCollect(2);
+      else if (myMenuIndex == 4) myActionTrain();
+      else if (myMenuIndex == 5) myActionInfer();
+      else if (myMenuIndex == 6) myActionWebStream();
+    }
+  }
+}
+
+
+// ██████████████████████████████████████████████████████████████████████████████
+// ██                                                                          ██
+// ██  PART 5 — v61 STRING COMMAND HANDLER                                     ██
+// ██  SD browser (SD_LIST, SD_READ, SD_WRITE, SD_DELETE, SD_RMDIR,           ██
+// ██              SD_JPEG, SD_HEAD)                                           ██
+// ██  Camera     (CAM_CAPTURE, CAM_STREAM, CAM_STREAM_STOP)                  ██
+// ██                                                                          ██
+// ██  Protocol is identical to esp32-to-web09 / webSerial18 so the           ██
+// ██  torchjs87 SD browser and live stream UI work without changes.           ██
+// ██                                                                          ██
+// ██████████████████████████████████████████████████████████████████████████████
+
+// ── Path normaliser ─────────────────────────────────────────────────────────
+String myNormPath(String p) {
+  p.trim();
+  if (!p.startsWith("/")) p = "/" + p;
+  return p;
+}
+
+// ── Ensure parent directory exists ──────────────────────────────────────────
+void myEnsureParentDir(const String& path) {
+  int lastSlash = path.lastIndexOf('/');
+  if (lastSlash > 0) {
+    String dir = path.substring(0, lastSlash);
+    if (!SD.exists(dir)) SD.mkdir(dir);
+  }
+}
+
+// ── Recursive directory removal ─────────────────────────────────────────────
+bool mySdRemoveDirRecursive(const String& path, int& deleted) {
+  File dir = SD.open(path);
+  if (!dir || !dir.isDirectory()) { if (dir) dir.close(); return false; }
+  while (true) {
+    File entry = dir.openNextFile();
+    if (!entry) break;
+    String entryPath = path;
+    if (!entryPath.endsWith("/")) entryPath += "/";
+    entryPath += entry.name();
+    bool isDir = entry.isDirectory();
+    entry.close();
+    if (isDir) {
+      mySdRemoveDirRecursive(entryPath, deleted);
+    } else {
+      if (SD.remove(entryPath)) deleted++;
+    }
+  }
+  dir.close();
+  if (SD.rmdir(path)) { deleted++; return true; }
+  return false;
+}
+
+// ── SD : List directory ──────────────────────────────────────────────────────
+// Output: SD_LIST_START / SD_FILE:name,size,D|F / SD_LIST_END:/path
+void mySdListDir(const String& path) {
+  File root = SD.open(path);
+  if (!root || !root.isDirectory()) {
+    Serial.print("ERR:Cannot open directory: "); Serial.println(path);
+    return;
+  }
+  Serial.println("SD_LIST_START");
+  while (true) {
+    File entry = root.openNextFile();
+    if (!entry) break;
+    Serial.print("SD_FILE:");
+    Serial.print(entry.name());
+    Serial.print(",");
+    Serial.print(entry.isDirectory() ? 0 : (uint32_t)entry.size());
+    Serial.print(",");
+    Serial.println(entry.isDirectory() ? "D" : "F");
+    entry.close();
+  }
+  root.close();
+  Serial.print("SD_LIST_END:"); Serial.println(path);
+}
+
+// ── SD : Read text / JSON file ───────────────────────────────────────────────
+// Output: SD_CONTENT_START / SD_LINE:<line> / SD_CONTENT_END
+void mySdReadText(const String& path) {
+  File f = SD.open(path, FILE_READ);
+  if (!f) {
+    Serial.print("ERR:Cannot open: "); Serial.println(path); return;
+  }
+  Serial.println("SD_CONTENT_START");
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    if (line.endsWith("\r")) line.remove(line.length() - 1);
+    Serial.print("SD_LINE:"); Serial.println(line);
+  }
+  f.close();
+  Serial.println("SD_CONTENT_END");
+}
+
+// ── SD : Write text / JSON file ─────────────────────────────────────────────
+void mySdWriteText(const String& path, const String& content) {
+  myEnsureParentDir(path);
+  File f = SD.open(path, FILE_WRITE);
+  if (!f) {
+    Serial.print("ERR:Cannot create: "); Serial.println(path); return;
+  }
+  f.print(content);
+  f.close();
+  Serial.print("OK:Written "); Serial.print(content.length());
+  Serial.print("B to "); Serial.println(path);
+}
+
+// ── SD : Read JPEG → base64 → serial ────────────────────────────────────────
+// Output: SD_JPEG_START / SD_JPEG:<b64 chunk 60 chars> / SD_JPEG_END
+void mySdReadJpeg(const String& path) {
+  File f = SD.open(path, FILE_READ);
+  if (!f) {
+    Serial.print("ERR:Cannot open JPEG: "); Serial.println(path); return;
+  }
+  uint32_t fsize = f.size();
+  if (fsize == 0) { f.close(); Serial.println("ERR:Empty JPEG file"); return; }
+
+  uint8_t* buf = (uint8_t*)malloc(fsize);
+  if (!buf) {
+    f.close();
+    Serial.println("ERR:Not enough RAM to buffer JPEG"); return;
+  }
+  f.readBytes((char*)buf, fsize);
+  f.close();
+
+  size_t outLen = 0;
+  mbedtls_base64_encode(nullptr, 0, &outLen, buf, fsize);
+  uint8_t* b64 = (uint8_t*)malloc(outLen + 1);
+  if (!b64) {
+    free(buf); Serial.println("ERR:Not enough RAM for base64"); return;
+  }
+  mbedtls_base64_encode(b64, outLen + 1, &outLen, buf, fsize);
+  free(buf);
+  b64[outLen] = 0;
+
+  Serial.println("SD_JPEG_START");
+  const int CHUNK = 60;
+  for (size_t i = 0; i < outLen; i += CHUNK) {
+    Serial.print("SD_JPEG:");
+    size_t end = min(i + (size_t)CHUNK, outLen);
+    for (size_t j = i; j < end; j++) Serial.print((char)b64[j]);
+    Serial.println();
+    delay(1);
+  }
+  Serial.println("SD_JPEG_END");
+  free(b64);
+  Serial.print("OK:JPEG sent "); Serial.print(fsize); Serial.println("B");
+}
+
+// ── SD : Binary file header peek ─────────────────────────────────────────────
+// Output: SD_CONTENT_START / SD_LINE:<hex line> / SD_CONTENT_END
+void mySdReadBinaryHead(const String& path, uint16_t numBytes) {
+  File f = SD.open(path, FILE_READ);
+  if (!f) {
+    Serial.print("ERR:Cannot open: "); Serial.println(path); return;
+  }
+  Serial.println("SD_CONTENT_START");
+  Serial.print("SD_LINE:Binary: "); Serial.print(path);
+  Serial.print("  size:"); Serial.print((uint32_t)f.size()); Serial.println("B");
+  Serial.println("SD_LINE:--- First 256 bytes (hex) ---");
+
+  uint8_t row[16];
+  uint16_t totalRead = 0;
+  while (f.available() && totalRead < numBytes) {
+    uint8_t count = 0;
+    while (f.available() && count < 16 && totalRead < numBytes) {
+      row[count++] = f.read(); totalRead++;
+    }
+    Serial.print("SD_LINE:");
+    char hex[6];
+    snprintf(hex, sizeof(hex), "%04X  ", totalRead - count);
+    Serial.print(hex);
+    for (uint8_t i = 0; i < 16; i++) {
+      if (i < count) { snprintf(hex, sizeof(hex), "%02X ", row[i]); Serial.print(hex); }
+      else Serial.print("   ");
+      if (i == 7) Serial.print(" ");
+    }
+    Serial.print(" |");
+    for (uint8_t i = 0; i < count; i++)
+      Serial.print((char)(row[i] >= 32 && row[i] < 127 ? row[i] : '.'));
+    Serial.println("|");
+  }
+  Serial.println("SD_CONTENT_END");
+  f.close();
+}
+
+// ── Camera : Capture one frame → base64 → serial ────────────────────────────
+// Output: CAM_JPEG_START / CAM_JPEG:<b64 chunk> / CAM_JPEG_END
+// This replaces the old FRAME_B64: single-line protocol.
+// Both protocols are decoded by torchjs87 (old: FRAME_B64, new: CAM_JPEG_*).
+void myCamCaptureSend() {
+  camera_fb_t* fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("ERR:Camera frame capture failed");
+    return;
+  }
+  if (fb->format != PIXFORMAT_JPEG) {
+    esp_camera_fb_return(fb);
+    Serial.println("ERR:Camera not in JPEG mode");
+    return;
+  }
+
+  uint32_t fsize = fb->len;
+
+  // Encode to base64 using mbedtls (built into ESP32 SDK)
+  size_t outLen = 0;
+  mbedtls_base64_encode(nullptr, 0, &outLen, fb->buf, fsize);
+  uint8_t* b64 = (uint8_t*)malloc(outLen + 1);
+  if (!b64) {
+    esp_camera_fb_return(fb);
+    Serial.println("ERR:Not enough RAM for base64 encode");
+    return;
+  }
+  mbedtls_base64_encode(b64, outLen + 1, &outLen, fb->buf, fsize);
+  esp_camera_fb_return(fb);  // release frame buffer ASAP
+  b64[outLen] = 0;
+
+  // Stream to serial in 60-char chunks
+  Serial.println("CAM_JPEG_START");
+  const int CHUNK = 60;
+  for (size_t i = 0; i < outLen; i += CHUNK) {
+    Serial.print("CAM_JPEG:");
+    size_t end = min(i + (size_t)CHUNK, outLen);
+    for (size_t j = i; j < end; j++) Serial.print((char)b64[j]);
+    Serial.println();
+    delay(1);  // small yield — prevents WDT on long transfers
+  }
+  Serial.println("CAM_JPEG_END");
+  free(b64);
+  Serial.print("OK:Camera sent "); Serial.print(fsize); Serial.println("b");
+}
+
+// ── v61 String command dispatcher ────────────────────────────────────────────
+void myHandleStringCommand(const String& cmd) {
+
+  // ── SD : List directory ──────────────────────────────────
+  if (cmd.startsWith("SD_LIST:")) {
+    String path = cmd.substring(8); path.trim();
+    if (path.length() == 0) path = "/";
+    mySdListDir(path);
+
+  // ── SD : Read text / JSON ────────────────────────────────
+  } else if (cmd.startsWith("SD_READ:")) {
+    mySdReadText(myNormPath(cmd.substring(8)));
+
+  // ── SD : Write text ──────────────────────────────────────
+  } else if (cmd.startsWith("SD_WRITE:")) {
+    // Format: SD_WRITE:/path:content (newlines encoded as \n)
+    int sep = cmd.indexOf(':', 9);
+    if (sep < 0) { Serial.println("ERR:Bad SD_WRITE format — SD_WRITE:/path:content"); return; }
+    String path    = myNormPath(cmd.substring(9, sep));
+    String content = cmd.substring(sep + 1);
+    content.replace("\\n", "\n");
+    mySdWriteText(path, content);
+
+  // ── SD : Write JPEG from base64 ─────────────────────────
+  // Format: SD_JPEG_WRITE:/path/to/file.jpg:<base64data>
+  // Creates parent directories if they do not exist.
+  } else if (cmd.startsWith("SD_JPEG_WRITE:")) {
+    int sep = cmd.indexOf(':', 14);
+    if (sep < 0) {
+      Serial.println("ERR:Bad SD_JPEG_WRITE format — SD_JPEG_WRITE:/path/file.jpg:<base64>");
+    } else {
+      String path    = myNormPath(cmd.substring(14, sep));
+      String b64data = cmd.substring(sep + 1);
+      b64data.trim();
+      // Decode base64 → binary
+      size_t b64len   = b64data.length();
+      size_t maxBytes = (b64len / 4) * 3 + 4;
+      uint8_t* buf    = (uint8_t*)malloc(maxBytes);
+      if (!buf) {
+        Serial.println("ERR:Not enough RAM to decode JPEG base64");
+      } else {
+        size_t decodedLen = 0;
+        int ret = mbedtls_base64_decode(buf, maxBytes, &decodedLen,
+                                        (const unsigned char*)b64data.c_str(), b64len);
+        if (ret != 0) {
+          Serial.print("ERR:Base64 decode failed (mbedtls ret=");
+          Serial.print(ret); Serial.println(")");
+          free(buf);
+        } else {
+          // Ensure parent directory exists
+          myEnsureParentDir(path);
+          // Also ensure /images exists
+          if (!SD.exists("/images")) SD.mkdir("/images");
+          File f = SD.open(path, FILE_WRITE);
+          if (!f) {
+            Serial.print("ERR:Cannot create JPEG: "); Serial.println(path);
+            free(buf);
+          } else {
+            f.write(buf, decodedLen);
+            f.close();
+            free(buf);
+            Serial.print("OK:JPEG_WRITE "); Serial.print(path);
+            Serial.print(" ("); Serial.print(decodedLen); Serial.println("B)");
+          }
+        }
+      }
+    }
+
+  // ── SD : Chunked JPEG write (SD_JPEG_WRITE_START / SD_JPEG_CHUNK / SD_JPEG_WRITE_END) ──
+  // Receives a JPEG as base64 chunks then decodes and writes to SD.
+  // Used by the webpage Save to SD and Add Last Frame to Class buttons.
+  } else if (cmd.startsWith("SD_JPEG_WRITE_START:")) {
+    // Format: SD_JPEG_WRITE_START:/path/file.jpg:<bytecount>
+    int sep = cmd.indexOf(':', 20);
+    if (sep < 0) {
+      myJpegWritePath = myNormPath(cmd.substring(20));
+    } else {
+      myJpegWritePath = myNormPath(cmd.substring(20, sep));
+    }
+    myJpegWriteB64    = "";
+    myJpegWriteActive = true;
+    Serial.print("OK:JPEG_WRITE_READY "); Serial.println(myJpegWritePath);
+
+  } else if (cmd == "SD_JPEG_CHUNK" || cmd.startsWith("SD_JPEG_CHUNK:")) {
+    if (myJpegWriteActive) {
+      myJpegWriteB64 += (cmd.length() > 14) ? cmd.substring(14) : "";
+    }
+    // No response per chunk — avoids serial congestion
+
+  } else if (cmd == "SD_JPEG_WRITE_END") {
+    if (!myJpegWriteActive) {
+      Serial.println("ERR:No active JPEG write");
+    } else {
+      myJpegWriteActive = false;
+      const String& b64 = myJpegWriteB64;
+      size_t b64len = b64.length();
+      size_t maxBytes = (b64len / 4) * 3 + 4;
+      uint8_t* buf = (uint8_t*)malloc(maxBytes);
+      if (!buf) {
+        Serial.println("ERR:Not enough RAM to decode chunked JPEG");
+      } else {
+        size_t decodedLen = 0;
+        int ret = mbedtls_base64_decode(buf, maxBytes, &decodedLen,
+                                        (const unsigned char*)b64.c_str(), b64len);
+        if (ret != 0) {
+          Serial.print("ERR:Base64 decode failed ret="); Serial.println(ret);
+          free(buf);
+        } else {
+          myEnsureParentDir(myJpegWritePath);
+          if (!SD.exists("/images")) SD.mkdir("/images");
+          File f = SD.open(myJpegWritePath, FILE_WRITE);
+          if (!f) {
+            Serial.print("ERR:Cannot create: "); Serial.println(myJpegWritePath);
+            free(buf);
+          } else {
+            f.write(buf, decodedLen);
+            f.close();
+            free(buf);
+            Serial.print("OK:JPEG_WRITE_DONE "); Serial.print(myJpegWritePath);
+            Serial.print(" ("); Serial.print(decodedLen); Serial.println("B)");
+          }
+        }
+      }
+      myJpegWritePath = "";
+      myJpegWriteB64  = "";
+    }
+
+  // ── SD : Delete file ─────────────────────────────────────
+  } else if (cmd.startsWith("SD_DELETE:")) {
+    String path = myNormPath(cmd.substring(10));
+    if (!SD.exists(path)) {
+      Serial.print("ERR:Not found: "); Serial.println(path); return;
+    }
+    if (SD.remove(path)) {
+      Serial.print("OK:Deleted "); Serial.println(path);
+    } else {
+      Serial.print("ERR:Delete failed: "); Serial.println(path);
+    }
+
+  // ── SD : Delete directory (recursive) ───────────────────
+  } else if (cmd.startsWith("SD_RMDIR:")) {
+    String path = myNormPath(cmd.substring(9));
+    if (!SD.exists(path)) {
+      Serial.print("ERR:Not found: "); Serial.println(path); return;
+    }
+    File f = SD.open(path);
+    if (!f || !f.isDirectory()) {
+      if (f) f.close();
+      Serial.print("ERR:Not a directory: "); Serial.println(path); return;
+    }
+    f.close();
+    int deleted = 0;
+    if (mySdRemoveDirRecursive(path, deleted)) {
+      Serial.print("OK:Deleted folder "); Serial.print(path);
+      Serial.print(" ("); Serial.print(deleted); Serial.println(" items)");
+    } else {
+      Serial.print("ERR:Failed to fully delete: "); Serial.println(path);
+    }
+
+  // ── SD : Read JPEG → base64 ──────────────────────────────
+  } else if (cmd.startsWith("SD_JPEG:")) {
+    mySdReadJpeg(myNormPath(cmd.substring(8)));
+
+  // ── SD : Binary header peek ──────────────────────────────
+  } else if (cmd.startsWith("SD_HEAD:")) {
+    mySdReadBinaryHead(myNormPath(cmd.substring(8)), 256);
+
+  // ── Camera : Single capture ──────────────────────────────
+  // Format: CAM_CAPTURE  or  CAM_CAPTURE:240X240:12
+  } else if (cmd.startsWith("CAM_CAPTURE")) {
+    myCamStreaming = false;  // stop any ongoing stream
+    // Optional resolution/quality params
+    if (cmd.length() > 11) {
+      int sep1 = cmd.indexOf(':', 11);
+      int sep2 = (sep1 > 0) ? cmd.indexOf(':', sep1 + 1) : -1;
+      String resStr = (sep1 > 0) ? cmd.substring(12, sep1) : cmd.substring(12);
+      sensor_t* s = esp_camera_sensor_get();
+      if (s) {
+        framesize_t reqSize = FRAMESIZE_240X240;
+        if      (resStr == "QVGA")    reqSize = FRAMESIZE_QVGA;
+        else if (resStr == "VGA")     reqSize = FRAMESIZE_VGA;
+        else if (resStr == "SVGA")    reqSize = FRAMESIZE_SVGA;
+        else if (resStr == "240X240") reqSize = FRAMESIZE_240X240;
+        s->set_framesize(s, reqSize);
+        if (sep2 > 0) s->set_quality(s, (uint8_t)cmd.substring(sep2 + 1).toInt());
+      }
+    }
+    // Discard one stale frame so the new settings take effect
+    camera_fb_t* stale = esp_camera_fb_get();
+    if (stale) esp_camera_fb_return(stale);
+    delay(80);
+    myCamCaptureSend();
+
+  // ── Camera : Start continuous stream ────────────────────
+  // Format: CAM_STREAM  or  CAM_STREAM:QVGA:12
+  } else if (cmd.startsWith("CAM_STREAM") && !cmd.startsWith("CAM_STREAM_STOP")) {
+    if (cmd.length() > 10) {
+      int sep1 = cmd.indexOf(':', 10);
+      int sep2 = (sep1 > 0) ? cmd.indexOf(':', sep1 + 1) : -1;
+      String resStr = (sep1 > 0) ? cmd.substring(11, sep1) : cmd.substring(11);
+      sensor_t* s = esp_camera_sensor_get();
+      if (s) {
+        framesize_t reqSize = FRAMESIZE_QVGA;  // smaller default for faster streaming
+        if      (resStr == "240X240") reqSize = FRAMESIZE_240X240;
+        else if (resStr == "QVGA")    reqSize = FRAMESIZE_QVGA;
+        else if (resStr == "VGA")     reqSize = FRAMESIZE_VGA;
+        s->set_framesize(s, reqSize);
+        if (sep2 > 0) s->set_quality(s, (uint8_t)cmd.substring(sep2 + 1).toInt());
+      }
+    }
+    camera_fb_t* stale = esp_camera_fb_get();
+    if (stale) esp_camera_fb_return(stale);
+    myCamStreaming = true;
+    myLastCamStreamMs = 0;  // fire immediately on next loop tick
+    Serial.println("OK:Camera streaming started");
+
+  // ── Camera : Stop stream ─────────────────────────────────
+  } else if (cmd == "CAM_STREAM_STOP") {
+    myCamStreaming = false;
+    Serial.println("OK:Camera streaming stopped");
+
+  // ── STATUS (for serial monitor / health check) ───────────
+  } else if (cmd == "STATUS") {
+    Serial.println("OK:=== esp32-on-device-66 Status ===");
+    Serial.print("OK:Free heap:  "); Serial.print(ESP.getFreeHeap()); Serial.println(" bytes");
+    Serial.print("OK:Free PSRAM: "); Serial.print(ESP.getFreePsram()); Serial.println(" bytes");
+    Serial.print("OK:Uptime:     "); Serial.print(millis() / 1000); Serial.println(" s");
+    Serial.print("OK:SD card:    "); Serial.println(mySDavailable ? "mounted" : "absent");
+    Serial.print("OK:Weights:    "); Serial.println(myWeightsTrained ? "trained/loaded" : "random (not trained)");
+    Serial.print("OK:Heatmap:    "); Serial.println(myHeatmapEnabled ? "ON" : "OFF");
+    Serial.println("OK:SD browser: SD_LIST SD_READ SD_WRITE SD_DELETE SD_RMDIR SD_JPEG SD_HEAD SD_JPEG_WRITE");
+    Serial.println("OK:Camera    : CAM_CAPTURE CAM_STREAM CAM_STREAM_STOP");
+    Serial.println("OK:Heatmap   : HEATMAP_ON HEATMAP_OFF HEATMAP_STATUS");
+    Serial.println("OK:Menu      : 1-5=direct  6=WebStream  t=next  l=select");
+
+  // ── v66: Heatmap toggle commands ─────────────────────────
+  } else if (cmd == "HEATMAP_ON") {
+    myHeatmapEnabled = true;
+    Serial.printf("OK:Heatmap ON — %dx%d spatial map, max across %d filters\n",
+                  myCfg.conv2OutputSize, myCfg.conv2OutputSize, myCfg.conv2Filters);
+    Serial.println("OK:Format: HEATMAP:<rows>x<cols>:<base64-bytes>");
+    Serial.println("OK:Note: reduces inference FPS. Use HEATMAP_OFF to stop.");
+
+  } else if (cmd == "HEATMAP_OFF") {
+    myHeatmapEnabled = false;
+    Serial.println("OK:Heatmap OFF — inference FPS restored");
+
+  } else if (cmd == "HEATMAP_STATUS") {
+    Serial.printf("OK:Heatmap %s | size %dx%d | filters %d\n",
+                  myHeatmapEnabled ? "ON" : "OFF",
+                  myCfg.conv2OutputSize, myCfg.conv2OutputSize,
+                  myCfg.conv2Filters);
+
+  // ── Unknown ──────────────────────────────────────────────
+  } else {
+    Serial.print("ERR:Unknown command: "); Serial.println(cmd);
+  }
+}
