@@ -63,7 +63,7 @@ table td, table th {
 
 <p>Flash compiled ESP32 .bin files directly from the browser using <b>esptool-js v0.5.7</b>.<br>
 Requires Chrome/Edge · HTTPS or localhost · USB CDC On Boot: Enabled</p>
-<p>If you want to look at the code and load the sketch onto your Arduino IDE it is here in text form <a href="esp32-on-device-64.txt">esp32-on-device-64.txt</a></p>
+<p>If you want to look at the code and load the sketch onto your Arduino IDE it is here in text form <a href="firmware.ino">firmware.ino</a></p>
 
 <div style="border-left:3px solid #f90; padding:6px 12px; background:#fffbe6; margin-bottom:14px; font-size:.85rem; color:#664400;">
   <b>⚠ MUST REFRESH WEBPAGE FIRST</b> before flashing (clears previous WebSerial state),
@@ -72,7 +72,7 @@ Requires Chrome/Edge · HTTPS or localhost · USB CDC On Boot: Enabled</p>
 
 <!-- Option A -->
 <div class="myFlashOption myFlashSel" id="myOptA" onclick="mySelFlash('A')">
-  <h3>▸ Option A — Sketch Only (.ino.bin)</h3>
+  <h3>▸ Option A — Sketch Only (flash.ino.bin)</h3>
   <p>Flashes only the application partition at 0x10000. Fast. Preserves bootloader and NVS.<br>
      Use when the bootloader is already on the device (standard re-flash).</p>
   <div id="myInputsA">
@@ -82,14 +82,14 @@ Requires Chrome/Edge · HTTPS or localhost · USB CDC On Boot: Enabled</p>
       <input type="text" id="myASketch" value="0x10000">
     </div>
     <div style="font-size:.75rem; color:#666; margin-top:4px;">
-      Default auto-loaded: <b>esp_all_menu_image_train_infer62.ino.bin</b> · Browse to override
+      Default auto-loaded: <b>flash.ino.bin</b> · Browse to override
     </div>
   </div>
 </div>
 
 <!-- Option B -->
 <div class="myFlashOption" id="myOptB" onclick="mySelFlash('B')">
-  <h3>▸ Option B — Full Merged Flash (.ino.merged.bin)</h3>
+  <h3>▸ Option B — Full Merged Flash (flash.ino.merged.bin)</h3>
   <p>Flashes a single merged binary: bootloader + partition table + app at 0x0.<br>
      Use for fresh chips or after partition changes.</p>
   <div id="myInputsB" style="display:none;">
@@ -99,7 +99,7 @@ Requires Chrome/Edge · HTTPS or localhost · USB CDC On Boot: Enabled</p>
       <input type="text" id="myAMerged" value="0x0">
     </div>
     <div style="font-size:.75rem; color:#666; margin-top:4px;">
-      Default auto-loaded: <b>esp_all_menu_image_train_infer62.ino.merged.bin</b> · Browse to override
+      Default auto-loaded: <b>flash.ino.merged.bin</b> · Browse to override
     </div>
   </div>
 </div>
@@ -170,7 +170,7 @@ Requires Chrome/Edge · HTTPS or localhost · USB CDC On Boot: Enabled</p>
 
 <!-- ── SD Browser ── -->
 <b>SD Card Browser</b>
-<p>Browse, view, and delete files on the ESP32 SD card. Requires firmware with SD_LIST / SD_DELETE support (esp_all_menu_image_train_infer62).</p>
+<p>Browse, view, and delete files on the ESP32 SD card. Requires firmware with SD_LIST / SD_DELETE support (esp_all_menu_image_train_infer68).</p>
 
 <div class="mySdBreadcrumb" id="mySdBreadcrumb">
   <span class="mySdBcItem" onclick="mySdNavigate('/')">/ (root)</span>
@@ -358,9 +358,8 @@ Requires Chrome/Edge · HTTPS or localhost · USB CDC On Boot: Enabled</p>
           style="border:1px solid #ccc; margin-top:4px; image-rendering:pixelated;"></canvas>
   <br>
 </div>
-<button onclick="myRequestOneHeatmap()" title="Send HEATMAP_ON, receive one frame, then HEATMAP_OFF">📊 Request Heatmap</button>
 <button id="myHeatmapLiveBtn" onclick="myToggleHeatmapLive()">▶ Live Heatmap</button>
-<small style="color:#888;"> (live mode reduces ESP32 FPS)</small>
+<small style="color:#888;"> (reduces ESP32 FPS by ~0.2s — pauses/resumes inference automatically)</small>
 
 <br><br>
 
@@ -605,8 +604,8 @@ var myHeatmapPending = false;      // true = one-shot request in flight (HEATMAP
 
 // Flash firmware state
 var myFlashMode = 'A';
-var myFlashSketchFile  = 'esp_all_menu_image_train_infer62.ino.bin';
-var myFlashMergedFile  = 'esp_all_menu_image_train_infer62.ino.merged.bin';
+var myFlashSketchFile  = 'flash.ino.bin';
+var myFlashMergedFile  = 'flash.ino.merged.bin';
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -736,7 +735,7 @@ function toCString(s) {
      Handles connect/disconnect, send, receive, SD browser commands,
      and both single-frame and continuous streaming from ESP32 camera.
      ─────────────────────────────────────────────────────────────────
-     Protocol (esp_all_menu_image_train_infer62):
+     Protocol (esp_all_menu_image_train_infer68):
        Single frame  → send 'f', ESP32 replies FRAME_B64:<b64>\n
        CAM stream    → send CAM_STREAM\n, ESP32 sends CAM_JPEG_START /
                         CAM_JPEG:<chunk>\n / CAM_JPEG_END loop
@@ -878,13 +877,13 @@ function myHandleSerialData(chunk) {
     const l = line.trim();
     if (!l) continue;
 
-    // ── Old single-line FRAME_B64 (esp_all_menu_image_train_infer62.ino WebStream) ──
+    // ── Old single-line FRAME_B64 (esp_all_menu_image_train_infer68.ino WebStream) ──
     if (l.startsWith('FRAME_B64:')) {
       myDecodeEspFrame(l.substring(10).trim());
       continue;
     }
 
-    // ── New multi-line CAM_JPEG protocol (esp_all_menu_image_train_infer62) ──
+    // ── New multi-line CAM_JPEG protocol (esp_all_menu_image_train_infer68) ──
     if (l === 'CAM_JPEG_START') {
       myEspReceivingCam = true; myEspCamChunks = [];
       continue;
@@ -983,11 +982,6 @@ function myHandleSerialData(chunk) {
         const cols   = parseInt(dims[1]) || 0;
         if (rows > 0 && cols > 0 && b64.length > 0) {
           myRenderHeatmap(rows, cols, b64);
-          // One-shot mode: turn heatmap off after first frame arrives
-          if (myHeatmapPending && !myHeatmapLive) {
-            myHeatmapPending = false;
-            myWriteSerial('HEATMAP_OFF\n');
-          }
         }
       }
       continue;
@@ -1195,40 +1189,42 @@ function myRenderHeatmap(rows, cols, b64) {
 }
 
 // ─────────────────────────────────────────────────────────
-// HEATMAP — one-shot request
-// Sends HEATMAP_ON; myHandleSerialData sends HEATMAP_OFF
-// after the first HEATMAP: line is received.
-// ─────────────────────────────────────────────────────────
-function myRequestOneHeatmap() {
-  if (!mySerialWriter) { myLog('Not connected to ESP32'); return; }
-  if (myHeatmapLive) { myLog('Live heatmap is on — stop it first'); return; }
-  myHeatmapPending = true;
-  myWriteSerial('HEATMAP_ON\n');
-  mySerialLog('→ HEATMAP_ON (one-shot)');
-}
-
-// ─────────────────────────────────────────────────────────
 // HEATMAP — live toggle
 // ─────────────────────────────────────────────────────────
 function myToggleHeatmapLive() {
   if (!mySerialWriter) { myLog('Not connected to ESP32'); return; }
   const btn = document.getElementById('myHeatmapLiveBtn');
   if (myHeatmapLive) {
-    // Turn off
+    // Turn off heatmap — re-enable inference
     myHeatmapLive = false;
     myHeatmapPending = false;
     myWriteSerial('HEATMAP_OFF\n');
     mySerialLog('→ HEATMAP_OFF');
     btn.textContent = '▶ Live Heatmap';
-    myLog('Heatmap live mode off — ESP32 FPS restored');
+    // Restart inference if we paused it
+    if (myAnalysisStopped) {
+      myAnalysisStopped = false;
+      document.getElementById('myStopAnalysisBtn').style.display = 'block';
+      document.getElementById('myStartAnalysisBtn').style.display = 'none';
+      myLog('Heatmap live mode off — inference restarted');
+    } else {
+      myLog('Heatmap live mode off — ESP32 FPS restored');
+    }
   } else {
-    // Turn on
+    // Pause inference first so heatmap and inference loop don't race on the serial port
+    const wasRunning = !myAnalysisStopped && !!myTimer;
+    if (wasRunning) {
+      myAnalysisStopped = true;
+      document.getElementById('myStopAnalysisBtn').style.display = 'none';
+      document.getElementById('myStartAnalysisBtn').style.display = 'block';
+    }
+    // Turn on heatmap
     myHeatmapLive = true;
     myHeatmapPending = false;
     myWriteSerial('HEATMAP_ON\n');
     mySerialLog('→ HEATMAP_ON (live)');
     btn.textContent = '⏹ Stop Live Heatmap';
-    myLog('Heatmap live mode on — ESP32 FPS will be reduced');
+    myLog('Heatmap live mode on — inference paused, FPS slightly reduced (~0.2s)');
   }
 }
 </script>
@@ -1467,9 +1463,10 @@ async function mySdSaveTextFile() {
 function mySdDownloadFile() {
   const name = (mySdContentFile || 'file').split('/').pop();
   const img = document.getElementById('mySdViewerImg');
-  if (img.style.display !== 'none' && myEspLastB64) {
-    // Download JPEG
-    const binary = atob(document.getElementById('mySdViewerImg').src.split(',')[1]);
+  if (img.style.display !== 'none' && img.src && img.src.startsWith('data:image')) {
+    // Download JPEG — use the viewer's own src (not myEspLastB64 which may be a different frame)
+    const b64 = img.src.split(',')[1];
+    const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const blob = new Blob([bytes], {type:'image/jpeg'});
@@ -2112,7 +2109,7 @@ async function mySaveImages(myID) {
 // SAVE CLASS IMAGES DIRECTLY TO ESP32 SD CARD VIA WEBSERIAL
 // Uses SD_JPEG_WRITE_START / SD_JPEG_CHUNK / SD_JPEG_WRITE_END protocol.
 // Images go to: /images/<ClassName>/img_NNNN.jpg
-// Requires esp_all_menu_image_train_infer62.ino firmware connected via WebSerial.
+// Requires esp_all_menu_image_train_infer68.ino firmware connected via WebSerial.
 // ─────────────────────────────────────────────────────────
 async function mySaveClassToSd(myID) {
   if (!mySerialWriter) {
@@ -2716,21 +2713,34 @@ async function myExportWeightsHToSd() {
 
   const enc   = new TextEncoder();
   const bytes = enc.encode(txt);
+
+  // myWeights.h can be 60–100 KB — warn if it may exceed the ESP32's heap for the
+  // SD_JPEG_WRITE_START base64 accumulator (the firmware builds the full b64 string
+  // in a single Arduino String before decoding, which needs ~4/3 × filesize of RAM).
+  const estimatedRam = Math.ceil(bytes.length * 4 / 3);
+  if (bytes.length > 50000) {
+    myLog(`⚠ myWeights.h is ${(bytes.length/1024).toFixed(1)} KB — needs ~${(estimatedRam/1024).toFixed(0)} KB ESP32 heap. Large files may fail; use "Export to PC Downloads" if SD write fails.`);
+  }
+
   let binary  = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   const b64 = btoa(binary);
 
   const sdPath = '/header/myWeights.h';
-  myLog(`Sending myWeights.h to SD ${sdPath} (${bytes.length} bytes)...`);
+  myLog(`Sending myWeights.h to SD ${sdPath} (${bytes.length} bytes, ${b64.length} b64 chars)...`);
   mySerialLog(`→ SD_JPEG_WRITE_START:${sdPath}:${bytes.length}`);
 
+  // Use a smaller chunk size and larger inter-batch delay for text files to avoid
+  // overflowing the ESP32's serial input buffer (max ~512 bytes per line).
   const CHUNK = 60;
+  const BATCH = 10;   // pause every 10 chunks (was 20) — gives ESP32 more processing time
   await myWriteSerial(`SD_JPEG_WRITE_START:${sdPath}:${bytes.length}\n`);
   for (let pos = 0; pos < b64.length; pos += CHUNK) {
     await myWriteSerial(`SD_JPEG_CHUNK:${b64.substring(pos, pos + CHUNK)}\n`);
-    if ((pos / CHUNK) % 20 === 19) await new Promise(r => setTimeout(r, 10));
+    if ((pos / CHUNK) % BATCH === BATCH - 1) await new Promise(r => setTimeout(r, 20));
   }
   await myWriteSerial('SD_JPEG_WRITE_END\n');
+  myLog('myWeights.h chunks sent — waiting for OK:JPEG_WRITE_DONE confirmation...');
   // ✓ confirmation arrives via OK:JPEG_WRITE_DONE in myHandleSerialData
 }
 </script>
