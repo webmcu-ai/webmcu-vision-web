@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Grid Tiles</title>
+</head>
+<body style="margin: 0; padding: 0;">
+
+    <div id="myTileContainer" style="position: relative; width: 100vw; height: 100vh;">
+        
+        <!-- Tile 1 -->
+        <div id="myTile1" style="position: absolute; left: 10px; top: 10px; width: 150px; height: 100px; border: 1px solid black; display: flex; flex-direction: column;">
+            <div onmousedown="myStartDragging(event, 'myTile1')" style="background: #ccc; cursor: move; user-select: none;">Tile 1</div>
+            <div style="flex: 1;">Content 1</div>
+            <div onmousedown="myStartResizing(event, 'myTile1')" style="width: 10px; height: 10px; background: black; cursor: nwse-resize; align-self: flex-end;"></div>
+        </div>
+
+        <!-- Tile 2 -->
+        <div id="myTile2" style="position: absolute; left: 170px; top: 10px; width: 150px; height: 100px; border: 1px solid black; display: flex; flex-direction: column;">
+            <div onmousedown="myStartDragging(event, 'myTile2')" style="background: #ccc; cursor: move; user-select: none;">Tile 2</div>
+            <div style="flex: 1;">Content 2</div>
+            <div onmousedown="myStartResizing(event, 'myTile2')" style="width: 10px; height: 10px; background: black; cursor: nwse-resize; align-self: flex-end;"></div>
+        </div>
+
+        <!-- Tile 3 -->
+        <div id="myTile3" style="position: absolute; left: 330px; top: 10px; width: 150px; height: 100px; border: 1px solid black; display: flex; flex-direction: column;">
+            <div onmousedown="myStartDragging(event, 'myTile3')" style="background: #ccc; cursor: move; user-select: none;">Tile 3</div>
+            <div style="flex: 1;">Content 3</div>
+            <div onmousedown="myStartResizing(event, 'myTile3')" style="width: 10px; height: 10px; background: black; cursor: nwse-resize; align-self: flex-end;"></div>
+        </div>
+
+        <!-- Tile 4 -->
+        <div id="myTile4" style="position: absolute; left: 10px; top: 120px; width: 150px; height: 100px; border: 1px solid black; display: flex; flex-direction: column;">
+            <div onmousedown="myStartDragging(event, 'myTile4')" style="background: #ccc; cursor: move; user-select: none;">Tile 4</div>
+            <div style="flex: 1;">Content 4</div>
+            <div onmousedown="myStartResizing(event, 'myTile4')" style="width: 10px; height: 10px; background: black; cursor: nwse-resize; align-self: flex-end;"></div>
+        </div>
+
+        <!-- Tile 5 -->
+        <div id="myTile5" style="position: absolute; left: 170px; top: 120px; width: 150px; height: 100px; border: 1px solid black; display: flex; flex-direction: column;">
+            <div onmousedown="myStartDragging(event, 'myTile5')" style="background: #ccc; cursor: move; user-select: none;">Tile 5</div>
+            <div style="flex: 1;">Content 5</div>
+            <div onmousedown="myStartResizing(event, 'myTile5')" style="width: 10px; height: 10px; background: black; cursor: nwse-resize; align-self: flex-end;"></div>
+        </div>
+
+        <!-- Tile 6 -->
+        <div id="myTile6" style="position: absolute; left: 330px; top: 120px; width: 150px; height: 100px; border: 1px solid black; display: flex; flex-direction: column;">
+            <div onmousedown="myStartDragging(event, 'myTile6')" style="background: #ccc; cursor: move; user-select: none;">Tile 6</div>
+            <div style="flex: 1;">Content 6</div>
+            <div onmousedown="myStartResizing(event, 'myTile6')" style="width: 10px; height: 10px; background: black; cursor: nwse-resize; align-self: flex-end;"></div>
+        </div>
+
+    </div>
+
+    <script>
+        let myActiveElement = null;
+        let myCurrentAction = null;
+        let myMaxZIndex = 1;
+        let myStartX, myStartY, myStartWidth, myStartHeight, myStartLeft, myStartTop;
+
+        function myBringToFront(myElement) {
+            myMaxZIndex++;
+            myElement.style.zIndex = myMaxZIndex;
+        }
+
+        async function myStartDragging(myEvent, myId) {
+            myEvent.preventDefault();
+            myActiveElement = document.getElementById(myId);
+            myCurrentAction = 'drag';
+            myStartX = myEvent.clientX;
+            myStartY = myEvent.clientY;
+            myStartLeft = parseInt(myActiveElement.style.left);
+            myStartTop = parseInt(myActiveElement.style.top);
+            window.onmousemove = myPerformAction;
+            window.onmouseup = myStopAction;
+            myBringToFront(myActiveElement);
+        }
+
+        async function myStartResizing(myEvent, myId) {
+            myEvent.preventDefault();
+            myActiveElement = document.getElementById(myId);
+            myCurrentAction = 'resize';
+            myStartX = myEvent.clientX;
+            myStartY = myEvent.clientY;
+            myStartWidth = parseInt(myActiveElement.style.width);
+            myStartHeight = parseInt(myActiveElement.style.height);
+            window.onmousemove = myPerformAction;
+            window.onmouseup = myStopAction;
+            myBringToFront(myActiveElement);
+        }
+
+        function myPerformAction(myEvent) {
+            if (!myActiveElement) return;
+            const myDeltaX = myEvent.clientX - myStartX;
+            const myDeltaY = myEvent.clientY - myStartY;
+            if (myCurrentAction === 'drag') {
+                myActiveElement.style.left = (myStartLeft + myDeltaX) + "px";
+                myActiveElement.style.top = (myStartTop + myDeltaY) + "px";
+            } else if (myCurrentAction === 'resize') {
+                myActiveElement.style.width = Math.max(50, myStartWidth + myDeltaX) + "px";
+                myActiveElement.style.height = Math.max(50, myStartHeight + myDeltaY) + "px";
+            }
+        }
+
+        function myStopAction() {
+            myActiveElement = null;
+            myCurrentAction = null;
+            window.onmousemove = null;
+            window.onmouseup = null;
+        }
+    </script>
+</body>
+</html>
