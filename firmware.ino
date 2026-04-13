@@ -2,9 +2,28 @@
 
 // ======================================================
 // XIAO ML KIT (OR XIAO ESP32S3 SENSE)
-// FULL VISION ML  — v66
+// FULL VISION ML  — v70
 //
-// v66 additions over v65 (back-port from esp-all-menu-A0-image-train-infer42-28):
+// v70 additions over v66 (WebSerial multi-file save fixes):
+//   - Serial line buffer raised from 512 → 4096 bytes; silent discard replaced
+//     with ERR: message so the webpage sees a clear failure signal.
+//   - Chunked text-write protocol added (parallel to the JPEG chunked protocol):
+//       SD_TEXT_WRITE_START:/path/to/file.json
+//       SD_TEXT_CHUNK:<up to 512 chars of content; \n encoded as \\n>
+//       ... (repeat as many chunks as needed)
+//       SD_TEXT_WRITE_END
+//     The ESP32 accumulates all SD_TEXT_CHUNK fragments in RAM then writes the
+//     complete file atomically when SD_TEXT_WRITE_END arrives.
+//     This replaces the broken single-line SD_WRITE protocol for config.json,
+//     myWeights.h, and any other multi-KB text file — no size limit.
+//     SD_WRITE is kept as a legacy path for short single-line writes.
+//   - mySDavailable guard added to all SD command handlers (SD_READ, SD_WRITE,
+//     SD_TEXT_WRITE_*, SD_JPEG_WRITE, SD_JPEG_WRITE_START, SD_DELETE, SD_RMDIR,
+//     SD_MKDIR, SD_JPEG, SD_HEAD) — returns ERR:SD not available immediately
+//     rather than a confusing "Cannot open/create" error.
+//   - STATUS response updated: lists SD_TEXT_WRITE_START/CHUNK/END; version
+//     string bumped to esp32-on-device-70.
+//
 //   - myWeightsTrained flag restored: set true on successful myLoadWeights() and
 //     on normal/early-save training completion; guards inference against untrained
 //     weights without always forcing a reload from SD.
@@ -215,10 +234,10 @@ U8G2_SSD1306_72X40_ER_1_HW_I2C u8g2(U8G2_R2, U8X8_PIN_NONE);
 #define DEFAULT_NUM_CLASSES        3
 #define DEFAULT_CONV1_FILTERS      4
 #define DEFAULT_CONV2_FILTERS      8
-#define DEFAULT_LEARNING_RATE      0.00005f  // v53: reduced 6x for float32 stability (Fix #5)
-#define DEFAULT_BATCH_SIZE        12
-#define DEFAULT_TARGET_EPOCHS     10
-#define DEFAULT_THRESHOLD_PRESS   1100
+#define DEFAULT_LEARNING_RATE      0.0003f  // v53: reduced 6x for float32 stability (Fix #5)
+#define DEFAULT_BATCH_SIZE         6
+#define DEFAULT_TARGET_EPOCHS      20
+#define DEFAULT_THRESHOLD_PRESS    1100
 #define DEFAULT_THRESHOLD_RELEASE  900
 #define DEFAULT_SCREEN_TIMEOUT    300000UL   // 5 minutes in ms
 #define DEFAULT_WEIGHTS_FILE      "myWeights.bin"
@@ -525,6 +544,14 @@ const uint16_t MY_CAM_STREAM_INTERVAL_MS = 200; // ~5 fps — limited by transfe
 String myJpegWritePath   = "";           // destination path on SD card
 String myJpegWriteB64    = "";           // accumulated base64 chunks
 bool   myJpegWriteActive = false;        // true = collecting SD_JPEG_CHUNK lines
+
+// v70: chunked TEXT write state (SD_TEXT_WRITE_START / SD_TEXT_CHUNK / SD_TEXT_WRITE_END)
+// Replaces the fragile single-line SD_WRITE protocol for JSON, .h, and any text file
+// whose content exceeds the serial-line buffer.  The webpage sends the file content
+// as multiple SD_TEXT_CHUNK lines (each ≤ 512 chars), then SD_TEXT_WRITE_END commits.
+String myTextWritePath    = "";          // destination path on SD card
+String myTextWriteContent = "";          // accumulated text content
+bool   myTextWriteActive  = false;       // true = collecting SD_TEXT_CHUNK lines
 
 // ======================================================
 // XIAO ESP32-S3 CAMERA PINS
@@ -2669,8 +2696,12 @@ void myHandleMenuNavigation() {
       // continue — consume any adjacent \r\n pairs
     } else {
       mySerialLineBuf += c;
-      if (mySerialLineBuf.length() > 512) {
-        // Safety: discard runaway line (e.g. binary garbage on connect)
+      if (mySerialLineBuf.length() > 4096) {
+        // Safety: discard runaway line (e.g. binary garbage on connect).
+        // 4096 is large enough for any SD_TEXT_CHUNK or SD_JPEG_WRITE line;
+        // if you ever see this error, increase the limit or use the chunked
+        // text-write protocol (SD_TEXT_WRITE_START / SD_TEXT_CHUNK / SD_TEXT_WRITE_END).
+        Serial.println("ERR:Serial line too long — discarded (>4096 bytes)");
         mySerialLineBuf = "";
       }
     }
@@ -2936,17 +2967,26 @@ void myHandleStringCommand(const String& cmd) {
 
   // ── SD : List directory ──────────────────────────────────
   if (cmd.startsWith("SD_LIST:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     String path = cmd.substring(8); path.trim();
     if (path.length() == 0) path = "/";
     mySdListDir(path);
 
   // ── SD : Read text / JSON ────────────────────────────────
   } else if (cmd.startsWith("SD_READ:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     mySdReadText(myNormPath(cmd.substring(8)));
 
   // ── SD : Write text ──────────────────────────────────────
   } else if (cmd.startsWith("SD_WRITE:")) {
-    // Format: SD_WRITE:/path:content (newlines encoded as \n)
+    // Legacy single-line format: SD_WRITE:/path:content (newlines encoded as \n)
+    // WARNING: limited to ~4096 bytes per line by the serial buffer.
+    // For larger files (config.json, myWeights.h) prefer the chunked protocol:
+    //   SD_TEXT_WRITE_START:/path
+    //   SD_TEXT_CHUNK:<up to 512 chars of content>
+    //   ...
+    //   SD_TEXT_WRITE_END
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     int sep = cmd.indexOf(':', 9);
     if (sep < 0) { Serial.println("ERR:Bad SD_WRITE format — SD_WRITE:/path:content"); return; }
     String path    = myNormPath(cmd.substring(9, sep));
@@ -2954,10 +2994,46 @@ void myHandleStringCommand(const String& cmd) {
     content.replace("\\n", "\n");
     mySdWriteText(path, content);
 
+  // ── SD : Chunked text write ───────────────────────────────
+  // SD_TEXT_WRITE_START:/path/to/file.json
+  //   Opens (or creates) the file and resets the content buffer.
+  // SD_TEXT_CHUNK:<content fragment — any length up to serial-line limit>
+  //   Appends the fragment to an in-memory buffer.
+  //   Newlines encoded as \n literals are unescaped on each chunk.
+  // SD_TEXT_WRITE_END
+  //   Flushes the accumulated content to SD and closes the file.
+  // This protocol has no length limit and is safe for config.json,
+  // myWeights.h, or any other multi-KB text file.
+  } else if (cmd.startsWith("SD_TEXT_WRITE_START:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
+    myTextWritePath    = myNormPath(cmd.substring(20));
+    myTextWriteContent = "";
+    myTextWriteActive  = true;
+    Serial.print("OK:TEXT_WRITE_READY "); Serial.println(myTextWritePath);
+
+  } else if (cmd.startsWith("SD_TEXT_CHUNK:") || cmd == "SD_TEXT_CHUNK") {
+    if (myTextWriteActive) {
+      String chunk = (cmd.length() > 14) ? cmd.substring(14) : "";
+      chunk.replace("\\n", "\n");
+      myTextWriteContent += chunk;
+    }
+    // No per-chunk response — avoids serial congestion
+
+  } else if (cmd == "SD_TEXT_WRITE_END") {
+    if (!myTextWriteActive) {
+      Serial.println("ERR:No active text write — send SD_TEXT_WRITE_START first");
+    } else {
+      myTextWriteActive = false;
+      mySdWriteText(myTextWritePath, myTextWriteContent);
+      myTextWritePath    = "";
+      myTextWriteContent = "";
+    }
+
   // ── SD : Write JPEG from base64 ─────────────────────────
   // Format: SD_JPEG_WRITE:/path/to/file.jpg:<base64data>
   // Creates parent directories if they do not exist.
   } else if (cmd.startsWith("SD_JPEG_WRITE:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     int sep = cmd.indexOf(':', 14);
     if (sep < 0) {
       Serial.println("ERR:Bad SD_JPEG_WRITE format — SD_JPEG_WRITE:/path/file.jpg:<base64>");
@@ -3003,6 +3079,7 @@ void myHandleStringCommand(const String& cmd) {
   // Receives a JPEG as base64 chunks then decodes and writes to SD.
   // Used by the webpage Save to SD and Add Last Frame to Class buttons.
   } else if (cmd.startsWith("SD_JPEG_WRITE_START:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     // Format: SD_JPEG_WRITE_START:/path/file.jpg:<bytecount>
     int sep = cmd.indexOf(':', 20);
     if (sep < 0) {
@@ -3060,6 +3137,7 @@ void myHandleStringCommand(const String& cmd) {
 
   // ── SD : Delete file ─────────────────────────────────────
   } else if (cmd.startsWith("SD_DELETE:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     String path = myNormPath(cmd.substring(10));
     if (!SD.exists(path)) {
       Serial.print("ERR:Not found: "); Serial.println(path); return;
@@ -3072,6 +3150,7 @@ void myHandleStringCommand(const String& cmd) {
 
   // ── SD : Delete directory (recursive) ───────────────────
   } else if (cmd.startsWith("SD_RMDIR:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     String path = myNormPath(cmd.substring(9));
     if (!SD.exists(path)) {
       Serial.print("ERR:Not found: "); Serial.println(path); return;
@@ -3089,13 +3168,31 @@ void myHandleStringCommand(const String& cmd) {
     } else {
       Serial.print("ERR:Failed to fully delete: "); Serial.println(path);
     }
+  // ── make directory check ──────────────────────────────
+
+} else if (cmd.startsWith("SD_MKDIR:")) {
+  if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
+  String dirPath = cmd.substring(9);
+  dirPath.trim();
+  if (SD.exists(dirPath)) {
+    Serial.println("OK:DIR_EXISTS " + dirPath);
+  } else if (SD.mkdir(dirPath)) {
+    Serial.println("OK:MKDIR " + dirPath);
+  } else {
+    Serial.println("ERR:MKDIR_FAILED " + dirPath);
+  }
+
+
+
 
   // ── SD : Read JPEG → base64 ──────────────────────────────
   } else if (cmd.startsWith("SD_JPEG:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     mySdReadJpeg(myNormPath(cmd.substring(8)));
 
   // ── SD : Binary header peek ──────────────────────────────
   } else if (cmd.startsWith("SD_HEAD:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
     mySdReadBinaryHead(myNormPath(cmd.substring(8)), 256);
 
   // ── Camera : Single capture ──────────────────────────────
@@ -3154,7 +3251,7 @@ void myHandleStringCommand(const String& cmd) {
 
   // ── STATUS (for serial monitor / health check) ───────────
   } else if (cmd == "STATUS") {
-    Serial.println("OK:=== esp32-on-device-66 Status ===");
+    Serial.println("OK:=== esp32-on-device-70 Status ===");
     Serial.print("OK:Free heap:  "); Serial.print(ESP.getFreeHeap()); Serial.println(" bytes");
     Serial.print("OK:Free PSRAM: "); Serial.print(ESP.getFreePsram()); Serial.println(" bytes");
     Serial.print("OK:Uptime:     "); Serial.print(millis() / 1000); Serial.println(" s");
@@ -3162,6 +3259,7 @@ void myHandleStringCommand(const String& cmd) {
     Serial.print("OK:Weights:    "); Serial.println(myWeightsTrained ? "trained/loaded" : "random (not trained)");
     Serial.print("OK:Heatmap:    "); Serial.println(myHeatmapEnabled ? "ON" : "OFF");
     Serial.println("OK:SD browser: SD_LIST SD_READ SD_WRITE SD_DELETE SD_RMDIR SD_JPEG SD_HEAD SD_JPEG_WRITE");
+    Serial.println("OK:Text write: SD_TEXT_WRITE_START SD_TEXT_CHUNK SD_TEXT_WRITE_END  (chunked, no size limit)");
     Serial.println("OK:Camera    : CAM_CAPTURE CAM_STREAM CAM_STREAM_STOP");
     Serial.println("OK:Heatmap   : HEATMAP_ON HEATMAP_OFF HEATMAP_STATUS");
     Serial.println("OK:Menu      : 1-5=direct  6=WebStream  t=next  l=select");
