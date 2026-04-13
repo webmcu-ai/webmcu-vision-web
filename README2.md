@@ -2,6 +2,19 @@
 
 **Browser-based training, management, and deployment companion for the XIAO ESP32-S3 Sense.**
 
+
+
+
+
+Active WebSerial Page at  [https://webmcu-ai.github.io/webmcu-vision-web/index.html](https://webmcu-ai.github.io/webmcu-vision-web/index.html)
+
+Needs Seeedstudio XIAO ML Kit connected through webSerial
+
+Proof of concept for on-device training pagper github at  <a href="https://github.com/webmcu-ai/on-device-vision-ai">https://github.com/webmcu-ai/on-device-vision-ai</a>
+
+
+
+
 Single HTML file. No installation. Open in Chrome or Edge, plug in your ESP32, and train a visual classifier in under 90 minutes on $15–40 USD hardware. All data stays on your local machine.
 
 Part of the [webmcu-ai](https://github.com/webmcu-ai) series — a set of open templates for TinyML on microcontrollers, designed to be adapted by LLM-assisted workflows for your specific hardware, sensors, and problem.
