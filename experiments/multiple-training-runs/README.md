@@ -1,10 +1,38 @@
+# Multiple Training Runs: Environmental Consistency Test
 
-Multiple Training Runs: Environmental Consistency TestThis experiment evaluates the training speed and classification consistency of a 2-layer CNN vision model across five distinct environmental conditions. The primary variable is the background used for the 0blank class, testing how different visual noise levels affect model performance.Experiment ParametersModel Architecture: 2-Layer Convolutional Neural Network (CNN).Dataset: 30 images per class.Classes:0blank: Environment-dependent background.1cup: Target object 1.2pen: Target object 2.Assets per Test: Each experiment folder contains:A header/ folder and an image/ folder.A detailed log.txt of the training session.Three real-world test images featuring heat maps and inference results.Training Environments & ResultsEnvironmentDescriptionBackground (Class 0)NotesBareMinimalist setupLight green paperBaseline for "clean" training.DesktopStandard workspaceArea beside computerTypical office lighting and clutter.FloorGround levelFloor surfaceUnique perspective/texture.ShadeLow lightDark roomTests model sensitivity to underexposure.BusyHigh noiseWorkbench with paint splattersSignificant visual artifacts and "busy" textures.Directory StructureEach experiment listed above is stored in its own sub-directory within the multiple-training-runs folder.Plaintext/experiments/multiple-training-runs/
+This experiment evaluates the training speed and classification consistency of a **2-layer CNN vision model** across five distinct environmental conditions. The primary goal is to determine how the visual environment of the `0blank` class affects model robustness.
+
+### Experiment Parameters
+* **Model:** 2-Layer CNN Vision Model.
+* **Data Split:** 30 images per class.
+* **Classes:**
+    * `0blank`: Environment-dependent background.
+    * `1cup`: Target object.
+    * `2pen`: Target object.
+* **Folder Contents:** Each test directory includes:
+    * `/header/` and `/image/` folders.
+    * A text-based training log.
+    * Three real-world test images featuring **heat maps** and inference results.
+
+### Training Environments
+
+| Environment | Background (Class 0) | Description |
+| :--- | :--- | :--- |
+| **Bare** | Light green paper | A clean, solid-colored baseline. |
+| **Desktop** | Computer desk | Standard workspace area beside a computer. |
+| **Floor** | Floor surface | Real-world floor textures and lighting. |
+| **Shade** | Dark room | Low-light conditions to test sensor sensitivity. |
+| **Busy** | Paint-splattered workbench | High visual noise with significant artifacts. |
+
+### Directory Structure
+Results for each environment are organized as follows:
+
+```text
+/experiments/multiple-training-runs/
 └── [environment-name]/
     ├── header/
     ├── image/
     ├── log.txt
-    └── test_result_1_heatmap.png
-    └── test_result_2_heatmap.png
-    └── test_result_3_heatmap.png
-ObservationsThe heat maps included in each folder provide visual confirmation of which features the model prioritized during training in each specific environment. This data is crucial for understanding how "busy" backgrounds (like the paint-splattered workbench) influence weight distribution compared to the "bare" green paper baseline.
+    ├── test_01_heatmap.jpg
+    ├── test_02_heatmap.jpg
+    └── test_03_heatmap.jpg
