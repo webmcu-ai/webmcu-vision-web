@@ -1,0 +1,423 @@
+[10:58:06 AM] Browser heatmap ON — Conv2 activations extracted each inference tick
+[10:58:06 AM] [heatmap] Browser heatmap ready — will tap layer 4: LeakyReLU
+[10:58:06 AM] [heatmap] Model layers: 0:Conv2D 1:LeakyReLU 2:MaxPooling2D 3:Conv2D 4:LeakyReLU 5:Flatten 6:Dropout 7:Dense
+[10:56:49 AM] Training complete — reached target
+[10:56:49 AM] Training paused
+[10:56:49 AM] Confusion Matrix updated.
+[10:56:49 AM] ▶ Val @ Epoch 60 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:49 AM] Batch 900 | Epoch 60 | Loss 0.2405 ██░░░░░░ | Improving...
+[10:56:49 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:48 AM] Confusion Matrix updated.
+[10:56:48 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:47 AM] Epoch 60 start (90 samples)
+[10:56:47 AM] ▶ Val @ Epoch 59 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:46 AM] Confusion Matrix updated.
+[10:56:46 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:45 AM] Epoch 59 start (90 samples)
+[10:56:45 AM] Confusion Matrix updated.
+[10:56:45 AM] ▶ Val @ Epoch 58 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:45 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:43 AM] Confusion Matrix updated.
+[10:56:43 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:43 AM] Epoch 58 start (90 samples)
+[10:56:43 AM] ▶ Val @ Epoch 57 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:42 AM] Confusion Matrix updated.
+[10:56:42 AM] Batch 850 | Epoch 57 | Loss 0.2683 ██░░░░░░ | Improving...
+[10:56:42 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:40 AM] Epoch 57 start (90 samples)
+[10:56:40 AM] Confusion Matrix updated.
+[10:56:40 AM] ▶ Val @ Epoch 56 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:40 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:39 AM] Confusion Matrix updated.
+[10:56:39 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:38 AM] Epoch 56 start (90 samples)
+[10:56:38 AM] ▶ Val @ Epoch 55 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:37 AM] Confusion Matrix updated.
+[10:56:37 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:36 AM] Epoch 55 start (90 samples)
+[10:56:36 AM] Confusion Matrix updated.
+[10:56:36 AM] ▶ Val @ Epoch 54 | Overall 88.9% | 0Blank: 2/3 (67%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:36 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:34 AM] Confusion Matrix updated.
+[10:56:34 AM] Batch 800 | Epoch 54 | Loss 0.2634 ██░░░░░░ | Improving...
+[10:56:34 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:33 AM] Epoch 54 start (90 samples)
+[10:56:33 AM] ▶ Val @ Epoch 53 | Overall 88.9% | 0Blank: 2/3 (67%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:33 AM] Confusion Matrix updated.
+[10:56:33 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:31 AM] Epoch 53 start (90 samples)
+[10:56:31 AM] Confusion Matrix updated.
+[10:56:31 AM] ▶ Val @ Epoch 52 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:31 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:30 AM] Confusion Matrix updated.
+[10:56:30 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:29 AM] Epoch 52 start (90 samples)
+[10:56:29 AM] ▶ Val @ Epoch 51 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:28 AM] Confusion Matrix updated.
+[10:56:28 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:27 AM] Epoch 51 start (90 samples)
+[10:56:27 AM] Confusion Matrix updated.
+[10:56:27 AM] ▶ Val @ Epoch 50 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:27 AM] Batch 750 | Epoch 50 | Loss 0.2887 ██░░░░░░ | Improving...
+[10:56:27 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:25 AM] Confusion Matrix updated.
+[10:56:25 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:24 AM] Epoch 50 start (90 samples)
+[10:56:24 AM] ▶ Val @ Epoch 49 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:24 AM] Confusion Matrix updated.
+[10:56:24 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:22 AM] Epoch 49 start (90 samples)
+[10:56:22 AM] Confusion Matrix updated.
+[10:56:22 AM] ▶ Val @ Epoch 48 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:22 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:20 AM] Confusion Matrix updated.
+[10:56:20 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:20 AM] Epoch 48 start (90 samples)
+[10:56:20 AM] ▶ Val @ Epoch 47 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:19 AM] Confusion Matrix updated.
+[10:56:19 AM] Batch 700 | Epoch 47 | Loss 0.3016 ██░░░░░░ | Improving...
+[10:56:19 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:17 AM] Epoch 47 start (90 samples)
+[10:56:17 AM] Confusion Matrix updated.
+[10:56:17 AM] ▶ Val @ Epoch 46 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:17 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:16 AM] Confusion Matrix updated.
+[10:56:16 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:15 AM] Epoch 46 start (90 samples)
+[10:56:15 AM] ▶ Val @ Epoch 45 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:14 AM] Confusion Matrix updated.
+[10:56:14 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:13 AM] Epoch 45 start (90 samples)
+[10:56:13 AM] Confusion Matrix updated.
+[10:56:13 AM] ▶ Val @ Epoch 44 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:13 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:11 AM] Confusion Matrix updated.
+[10:56:11 AM] Batch 650 | Epoch 44 | Loss 0.3187 ██░░░░░░ | Improving...
+[10:56:11 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:10 AM] Epoch 44 start (90 samples)
+[10:56:10 AM] ▶ Val @ Epoch 43 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:10 AM] Confusion Matrix updated.
+[10:56:10 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:08 AM] Epoch 43 start (90 samples)
+[10:56:08 AM] Confusion Matrix updated.
+[10:56:08 AM] ▶ Val @ Epoch 42 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:08 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:06 AM] Confusion Matrix updated.
+[10:56:06 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:06 AM] Epoch 42 start (90 samples)
+[10:56:06 AM] ▶ Val @ Epoch 41 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:05 AM] Confusion Matrix updated.
+[10:56:05 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:03 AM] Epoch 41 start (90 samples)
+[10:56:03 AM] Confusion Matrix updated.
+[10:56:03 AM] ▶ Val @ Epoch 40 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:03 AM] Batch 600 | Epoch 40 | Loss 0.3382 ██░░░░░░ | Improving...
+[10:56:03 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:02 AM] Confusion Matrix updated.
+[10:56:02 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:56:01 AM] Epoch 40 start (90 samples)
+[10:56:01 AM] ▶ Val @ Epoch 39 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:56:00 AM] Confusion Matrix updated.
+[10:56:00 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:59 AM] Epoch 39 start (90 samples)
+[10:55:59 AM] Confusion Matrix updated.
+[10:55:59 AM] ▶ Val @ Epoch 38 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:59 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:57 AM] Confusion Matrix updated.
+[10:55:57 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:57 AM] Epoch 38 start (90 samples)
+[10:55:57 AM] ▶ Val @ Epoch 37 | Overall 88.9% | 0Blank: 2/3 (67%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:56 AM] Confusion Matrix updated.
+[10:55:56 AM] Batch 550 | Epoch 37 | Loss 0.3547 ███░░░░░ | Improving...
+[10:55:56 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:54 AM] Epoch 37 start (90 samples)
+[10:55:54 AM] Confusion Matrix updated.
+[10:55:54 AM] ▶ Val @ Epoch 36 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:54 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:53 AM] Confusion Matrix updated.
+[10:55:52 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:52 AM] Epoch 36 start (90 samples)
+[10:55:52 AM] ▶ Val @ Epoch 35 | Overall 88.9% | 0Blank: 2/3 (67%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:51 AM] Confusion Matrix updated.
+[10:55:51 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:50 AM] Epoch 35 start (90 samples)
+[10:55:50 AM] Confusion Matrix updated.
+[10:55:50 AM] ▶ Val @ Epoch 34 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:49 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:48 AM] Confusion Matrix updated.
+[10:55:48 AM] Batch 500 | Epoch 34 | Loss 0.3824 ███░░░░░ | Improving...
+[10:55:48 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:47 AM] Epoch 34 start (90 samples)
+[10:55:47 AM] ▶ Val @ Epoch 33 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:47 AM] Confusion Matrix updated.
+[10:55:46 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:45 AM] Epoch 33 start (90 samples)
+[10:55:45 AM] Confusion Matrix updated.
+[10:55:45 AM] ▶ Val @ Epoch 32 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:45 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:44 AM] Confusion Matrix updated.
+[10:55:43 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:43 AM] Epoch 32 start (90 samples)
+[10:55:43 AM] ▶ Val @ Epoch 31 | Overall 77.8% | 0Blank: 1/3 (33%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:42 AM] Confusion Matrix updated.
+[10:55:42 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:41 AM] Epoch 31 start (90 samples)
+[10:55:41 AM] Confusion Matrix updated.
+[10:55:40 AM] ▶ Val @ Epoch 30 | Overall 77.8% | 0Blank: 1/3 (33%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:40 AM] Batch 450 | Epoch 30 | Loss 0.3827 ███░░░░░ | Improving...
+[10:55:40 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:39 AM] Confusion Matrix updated.
+[10:55:39 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:38 AM] Epoch 30 start (90 samples)
+[10:55:38 AM] ▶ Val @ Epoch 29 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:37 AM] Confusion Matrix updated.
+[10:55:37 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:36 AM] Epoch 29 start (90 samples)
+[10:55:36 AM] Confusion Matrix updated.
+[10:55:36 AM] ▶ Val @ Epoch 28 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:36 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:34 AM] Confusion Matrix updated.
+[10:55:34 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:34 AM] Epoch 28 start (90 samples)
+[10:55:34 AM] ▶ Val @ Epoch 27 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:33 AM] Confusion Matrix updated.
+[10:55:33 AM] Batch 400 | Epoch 27 | Loss 0.4199 ███░░░░░ | Improving...
+[10:55:33 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:31 AM] Epoch 27 start (90 samples)
+[10:55:31 AM] Confusion Matrix updated.
+[10:55:31 AM] ▶ Val @ Epoch 26 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:31 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:30 AM] Confusion Matrix updated.
+[10:55:30 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:29 AM] Epoch 26 start (90 samples)
+[10:55:29 AM] ▶ Val @ Epoch 25 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:28 AM] Confusion Matrix updated.
+[10:55:28 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:27 AM] Epoch 25 start (90 samples)
+[10:55:27 AM] Confusion Matrix updated.
+[10:55:27 AM] ▶ Val @ Epoch 24 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:27 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:25 AM] Confusion Matrix updated.
+[10:55:25 AM] Batch 350 | Epoch 24 | Loss 0.4689 ███░░░░░ | Improving...
+[10:55:25 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:25 AM] Epoch 24 start (90 samples)
+[10:55:25 AM] ▶ Val @ Epoch 23 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:24 AM] Confusion Matrix updated.
+[10:55:24 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:22 AM] Epoch 23 start (90 samples)
+[10:55:22 AM] Confusion Matrix updated.
+[10:55:22 AM] ▶ Val @ Epoch 22 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:22 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:21 AM] Confusion Matrix updated.
+[10:55:21 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:20 AM] Epoch 22 start (90 samples)
+[10:55:20 AM] ▶ Val @ Epoch 21 | Overall 77.8% | 0Blank: 1/3 (33%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:19 AM] Confusion Matrix updated.
+[10:55:19 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:18 AM] Epoch 21 start (90 samples)
+[10:55:18 AM] Confusion Matrix updated.
+[10:55:18 AM] ▶ Val @ Epoch 20 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:18 AM] Batch 300 | Epoch 20 | Loss 0.5834 ████░░░░ | Training...
+[10:55:18 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:16 AM] Confusion Matrix updated.
+[10:55:16 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:16 AM] Epoch 20 start (90 samples)
+[10:55:16 AM] ▶ Val @ Epoch 19 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:15 AM] Confusion Matrix updated.
+[10:55:15 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:13 AM] Epoch 19 start (90 samples)
+[10:55:13 AM] Confusion Matrix updated.
+[10:55:13 AM] ▶ Val @ Epoch 18 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:13 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:12 AM] Confusion Matrix updated.
+[10:55:12 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:11 AM] Epoch 18 start (90 samples)
+[10:55:11 AM] ▶ Val @ Epoch 17 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:10 AM] Confusion Matrix updated.
+[10:55:10 AM] Batch 250 | Epoch 17 | Loss 0.7380 █████░░░ | Training...
+[10:55:10 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:09 AM] Epoch 17 start (90 samples)
+[10:55:09 AM] Confusion Matrix updated.
+[10:55:09 AM] ▶ Val @ Epoch 16 | Overall 55.6% | 0Blank: 3/3 (100%) | 1Cup: 2/3 (67%) | 2Pen: 0/3 (0%)
+[10:55:09 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:07 AM] Confusion Matrix updated.
+[10:55:07 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:07 AM] Epoch 16 start (90 samples)
+[10:55:07 AM] ▶ Val @ Epoch 15 | Overall 100.0% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:06 AM] Confusion Matrix updated.
+[10:55:06 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:04 AM] Epoch 15 start (90 samples)
+[10:55:04 AM] Confusion Matrix updated.
+[10:55:04 AM] ▶ Val @ Epoch 14 | Overall 44.4% | 0Blank: 3/3 (100%) | 1Cup: 1/3 (33%) | 2Pen: 0/3 (0%)
+[10:55:04 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:03 AM] Confusion Matrix updated.
+[10:55:03 AM] Batch 200 | Epoch 14 | Loss 0.8864 ██████░░ | Training...
+[10:55:03 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:02 AM] Epoch 14 start (90 samples)
+[10:55:02 AM] ▶ Val @ Epoch 13 | Overall 66.7% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 0/3 (0%)
+[10:55:01 AM] Confusion Matrix updated.
+[10:55:01 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:55:00 AM] Epoch 13 start (90 samples)
+[10:55:00 AM] Confusion Matrix updated.
+[10:55:00 AM] ▶ Val @ Epoch 12 | Overall 66.7% | 0Blank: 0/3 (0%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:55:00 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:58 AM] Confusion Matrix updated.
+[10:54:58 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:58 AM] Epoch 12 start (90 samples)
+[10:54:58 AM] ▶ Val @ Epoch 11 | Overall 88.9% | 0Blank: 2/3 (67%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:54:57 AM] Confusion Matrix updated.
+[10:54:57 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:55 AM] Epoch 11 start (90 samples)
+[10:54:55 AM] Confusion Matrix updated.
+[10:54:55 AM] ▶ Val @ Epoch 10 | Overall 33.3% | 0Blank: 3/3 (100%) | 1Cup: 0/3 (0%) | 2Pen: 0/3 (0%)
+[10:54:55 AM] Batch 150 | Epoch 10 | Loss 0.9860 ███████░ | Training...
+[10:54:55 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:54 AM] Confusion Matrix updated.
+[10:54:54 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:53 AM] Epoch 10 start (90 samples)
+[10:54:53 AM] ▶ Val @ Epoch 9 | Overall 77.8% | 0Blank: 1/3 (33%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:54:52 AM] Confusion Matrix updated.
+[10:54:52 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:51 AM] Epoch 9 start (90 samples)
+[10:54:51 AM] Confusion Matrix updated.
+[10:54:51 AM] ▶ Val @ Epoch 8 | Overall 66.7% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 0/3 (0%)
+[10:54:51 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:49 AM] Confusion Matrix updated.
+[10:54:49 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:49 AM] Epoch 8 start (90 samples)
+[10:54:49 AM] ▶ Val @ Epoch 7 | Overall 66.7% | 0Blank: 2/3 (67%) | 1Cup: 1/3 (33%) | 2Pen: 3/3 (100%)
+[10:54:48 AM] Confusion Matrix updated.
+[10:54:48 AM] Batch 100 | Epoch 7 | Loss 1.0463 ████████ | Starting...
+[10:54:48 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:46 AM] Epoch 7 start (90 samples)
+[10:54:46 AM] Confusion Matrix updated.
+[10:54:46 AM] ▶ Val @ Epoch 6 | Overall 88.9% | 0Blank: 2/3 (67%) | 1Cup: 3/3 (100%) | 2Pen: 3/3 (100%)
+[10:54:46 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:45 AM] Confusion Matrix updated.
+[10:54:45 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:44 AM] Epoch 6 start (90 samples)
+[10:54:44 AM] ▶ Val @ Epoch 5 | Overall 88.9% | 0Blank: 3/3 (100%) | 1Cup: 3/3 (100%) | 2Pen: 2/3 (67%)
+[10:54:43 AM] Confusion Matrix updated.
+[10:54:43 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:42 AM] Epoch 5 start (90 samples)
+[10:54:42 AM] Confusion Matrix updated.
+[10:54:42 AM] ▶ Val @ Epoch 4 | Overall 55.6% | 0Blank: 3/3 (100%) | 1Cup: 1/3 (33%) | 2Pen: 1/3 (33%)
+[10:54:42 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:40 AM] Confusion Matrix updated.
+[10:54:40 AM] Batch 50 | Epoch 4 | Loss 1.0934 ████████ | Starting...
+[10:54:40 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:40 AM] Epoch 4 start (90 samples)
+[10:54:40 AM] ▶ Val @ Epoch 3 | Overall 77.8% | 0Blank: 2/3 (67%) | 1Cup: 3/3 (100%) | 2Pen: 2/3 (67%)
+[10:54:39 AM] Confusion Matrix updated.
+[10:54:39 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:37 AM] Epoch 3 start (90 samples)
+[10:54:37 AM] Confusion Matrix updated.
+[10:54:37 AM] ▶ Val @ Epoch 2 | Overall 33.3% | 0Blank: 3/3 (100%) | 1Cup: 0/3 (0%) | 2Pen: 0/3 (0%)
+[10:54:37 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:36 AM] Confusion Matrix updated.
+[10:54:36 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:35 AM] Epoch 2 start (90 samples)
+[10:54:35 AM] ▶ Val @ Epoch 1 | Overall 33.3% | 0Blank: 0/3 (0%) | 1Cup: 0/3 (0%) | 2Pen: 3/3 (100%)
+[10:54:34 AM] Camera Stopped — training continues
+[10:54:34 AM] Confusion Matrix updated.
+[10:54:34 AM] Calculating confusion matrix (converting ImageData to Tensors)...
+[10:54:32 AM] Epoch 1 start (90 samples)
+[10:54:32 AM] Brain started
+[10:54:32 AM] Brain: 64x64 RGB CNN | conv2 out: 29x29 | flat: 6728 | Drop: 0.3 LR: 0.0003
+[10:54:32 AM] ESP32 camera mode — use Request Frame / Start Stream to preview and collect images
+[10:54:20 AM] Class 2 captured from ESP32 (30 in RAM · saved to disk)
+[10:54:19 AM] Class 2 captured from ESP32 (29 in RAM · saved to disk)
+[10:54:18 AM] Class 2 captured from ESP32 (28 in RAM · saved to disk)
+[10:54:17 AM] Class 2 captured from ESP32 (27 in RAM · saved to disk)
+[10:54:14 AM] Class 2 captured from ESP32 (26 in RAM · saved to disk)
+[10:54:13 AM] Class 2 captured from ESP32 (25 in RAM · saved to disk)
+[10:54:12 AM] Class 2 captured from ESP32 (24 in RAM · saved to disk)
+[10:54:11 AM] Class 2 captured from ESP32 (23 in RAM · saved to disk)
+[10:54:09 AM] Class 2 captured from ESP32 (22 in RAM · saved to disk)
+[10:54:08 AM] Class 2 captured from ESP32 (21 in RAM · saved to disk)
+[10:54:02 AM] Class 2 captured from ESP32 (20 in RAM · saved to disk)
+[10:54:02 AM] Class 2 captured from ESP32 (19 in RAM · saved to disk)
+[10:54:01 AM] Class 2 captured from ESP32 (18 in RAM · saved to disk)
+[10:54:00 AM] Class 2 captured from ESP32 (17 in RAM · saved to disk)
+[10:54:00 AM] Class 2 captured from ESP32 (16 in RAM · saved to disk)
+[10:53:59 AM] Class 2 captured from ESP32 (15 in RAM · saved to disk)
+[10:53:58 AM] Class 2 captured from ESP32 (14 in RAM · saved to disk)
+[10:53:57 AM] Class 2 captured from ESP32 (13 in RAM · saved to disk)
+[10:53:57 AM] Class 2 captured from ESP32 (12 in RAM · saved to disk)
+[10:53:56 AM] Class 2 captured from ESP32 (11 in RAM · saved to disk)
+[10:53:50 AM] Class 2 captured from ESP32 (10 in RAM · saved to disk)
+[10:53:48 AM] Class 2 captured from ESP32 (9 in RAM · saved to disk)
+[10:53:47 AM] Class 2 captured from ESP32 (8 in RAM · saved to disk)
+[10:53:46 AM] Class 2 captured from ESP32 (7 in RAM · saved to disk)
+[10:53:45 AM] Class 2 captured from ESP32 (6 in RAM · saved to disk)
+[10:53:44 AM] Class 2 captured from ESP32 (5 in RAM · saved to disk)
+[10:53:43 AM] Class 2 captured from ESP32 (4 in RAM · saved to disk)
+[10:53:43 AM] Class 2 captured from ESP32 (3 in RAM · saved to disk)
+[10:53:42 AM] Class 2 captured from ESP32 (2 in RAM · saved to disk)
+[10:53:40 AM] Class 2 captured from ESP32 (1 in RAM · saved to disk)
+[10:53:32 AM] Class 1 captured from ESP32 (30 in RAM · saved to disk)
+[10:53:31 AM] Class 1 captured from ESP32 (29 in RAM · saved to disk)
+[10:53:30 AM] Class 1 captured from ESP32 (28 in RAM · saved to disk)
+[10:53:29 AM] Class 1 captured from ESP32 (27 in RAM · saved to disk)
+[10:53:28 AM] Class 1 captured from ESP32 (26 in RAM · saved to disk)
+[10:53:27 AM] Class 1 captured from ESP32 (25 in RAM · saved to disk)
+[10:53:26 AM] Class 1 captured from ESP32 (24 in RAM · saved to disk)
+[10:53:25 AM] Class 1 captured from ESP32 (23 in RAM · saved to disk)
+[10:53:24 AM] Class 1 captured from ESP32 (22 in RAM · saved to disk)
+[10:53:19 AM] Class 1 captured from ESP32 (21 in RAM · saved to disk)
+[10:53:18 AM] Class 1 captured from ESP32 (20 in RAM · saved to disk)
+[10:53:17 AM] Class 1 captured from ESP32 (19 in RAM · saved to disk)
+[10:53:16 AM] Class 1 captured from ESP32 (18 in RAM · saved to disk)
+[10:53:15 AM] Class 1 captured from ESP32 (17 in RAM · saved to disk)
+[10:53:14 AM] Class 1 captured from ESP32 (16 in RAM · saved to disk)
+[10:53:12 AM] Class 1 captured from ESP32 (15 in RAM · saved to disk)
+[10:53:11 AM] Class 1 captured from ESP32 (14 in RAM · saved to disk)
+[10:53:10 AM] Class 1 captured from ESP32 (13 in RAM · saved to disk)
+[10:53:09 AM] Class 1 captured from ESP32 (12 in RAM · saved to disk)
+[10:53:08 AM] Class 1 captured from ESP32 (11 in RAM · saved to disk)
+[10:53:00 AM] Class 1 captured from ESP32 (10 in RAM · saved to disk)
+[10:52:59 AM] Class 1 captured from ESP32 (9 in RAM · saved to disk)
+[10:52:59 AM] Class 1 captured from ESP32 (8 in RAM · saved to disk)
+[10:52:58 AM] Class 1 captured from ESP32 (7 in RAM · saved to disk)
+[10:52:55 AM] Class 1 captured from ESP32 (6 in RAM · saved to disk)
+[10:52:54 AM] Class 1 captured from ESP32 (5 in RAM · saved to disk)
+[10:52:52 AM] Class 1 captured from ESP32 (4 in RAM · saved to disk)
+[10:52:51 AM] Class 1 captured from ESP32 (3 in RAM · saved to disk)
+[10:52:49 AM] Class 1 captured from ESP32 (2 in RAM · saved to disk)
+[10:52:48 AM] Class 1 captured from ESP32 (1 in RAM · saved to disk)
+[10:52:40 AM] Class 0 captured from ESP32 (30 in RAM · saved to disk)
+[10:52:39 AM] Class 0 captured from ESP32 (29 in RAM · saved to disk)
+[10:52:38 AM] Class 0 captured from ESP32 (28 in RAM · saved to disk)
+[10:52:37 AM] Class 0 captured from ESP32 (27 in RAM · saved to disk)
+[10:52:34 AM] Class 0 captured from ESP32 (26 in RAM · saved to disk)
+[10:52:33 AM] Class 0 captured from ESP32 (25 in RAM · saved to disk)
+[10:52:32 AM] Class 0 captured from ESP32 (24 in RAM · saved to disk)
+[10:52:31 AM] Class 0 captured from ESP32 (23 in RAM · saved to disk)
+[10:52:30 AM] Class 0 captured from ESP32 (22 in RAM · saved to disk)
+[10:52:29 AM] Class 0 captured from ESP32 (21 in RAM · saved to disk)
+[10:52:28 AM] Class 0 captured from ESP32 (20 in RAM · saved to disk)
+[10:52:27 AM] Class 0 captured from ESP32 (19 in RAM · saved to disk)
+[10:52:26 AM] Class 0 captured from ESP32 (18 in RAM · saved to disk)
+[10:52:25 AM] Class 0 captured from ESP32 (17 in RAM · saved to disk)
+[10:52:24 AM] Class 0 captured from ESP32 (16 in RAM · saved to disk)
+[10:52:23 AM] Class 0 captured from ESP32 (15 in RAM · saved to disk)
+[10:52:21 AM] Class 0 captured from ESP32 (14 in RAM · saved to disk)
+[10:52:20 AM] Class 0 captured from ESP32 (13 in RAM · saved to disk)
+[10:52:18 AM] Class 0 captured from ESP32 (12 in RAM · saved to disk)
+[10:52:17 AM] Class 0 captured from ESP32 (11 in RAM · saved to disk)
+[10:52:16 AM] Class 0 captured from ESP32 (10 in RAM · saved to disk)
+[10:52:15 AM] Class 0 captured from ESP32 (9 in RAM · saved to disk)
+[10:52:14 AM] Class 0 captured from ESP32 (8 in RAM · saved to disk)
+[10:52:13 AM] Class 0 captured from ESP32 (7 in RAM · saved to disk)
+[10:52:12 AM] Class 0 captured from ESP32 (6 in RAM · saved to disk)
+[10:52:10 AM] Class 0 captured from ESP32 (5 in RAM · saved to disk)
+[10:52:09 AM] Class 0 captured from ESP32 (4 in RAM · saved to disk)
+[10:52:08 AM] Class 0 captured from ESP32 (3 in RAM · saved to disk)
+[10:52:07 AM] Class 0 captured from ESP32 (2 in RAM · saved to disk)
+[10:52:04 AM] Class 0 captured from ESP32 (1 in RAM · saved to disk)
+[10:51:54 AM] ESP32 stream started (240x240)
+[10:51:48 AM] Captures will save to images/ClassName/ — mirrors SD card root structure
+[10:51:48 AM] Project folder set: busy/ (images/ and header/ ready)
+[10:49:36 AM] ESP32 Serial connected
+[10:49:26 AM] RAM window: 2000 samples/class — training cycles through this many images at a time
+Logs will appear here...
