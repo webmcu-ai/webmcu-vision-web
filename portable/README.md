@@ -10,6 +10,8 @@ If you want to bundle this code with the flassh.ino.bin and flash.ino.merge.bin 
 
 # Note: only the full merged flash works locally the fast flash seems to have a compression issue
 
+## Hold on. This may have corrupted it. Probably best to use the arduino IDE locally with the firmware.ino
+
 
 for the esp tool I changed at the very bottom of the code, to switch it from a module
 
