@@ -11,7 +11,7 @@ If you want to bundle this code with the flassh.ino.bin and flash.ino.merge.bin 
 
 
 
-for the esp tool I changed 
+for the esp tool I changed at the very bottom of the code, to switch it from a module
 
 ```
 export{Fe as ClassicReset,Pe as CustomReset,Ai as ESPLoader,Te as HardReset,pe as ROM,Me as Transport,fe as UsbJtagSerialReset,ue as decodeBase64Data,Oe as getStubJsonByChipName,Ue as validateCustomResetStringSequence};
