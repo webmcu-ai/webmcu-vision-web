@@ -8,7 +8,7 @@ Like always you could just use the Arduino IDE and the firmware.ino to install t
 If you want to bundle this code with the flassh.ino.bin and flash.ino.merge.bin  files and zip them and send them to someone or share with a thumb drive that would make sense for no internet use of this work.  Note I would also include the firmware.ino file as well.
 
 
-
+# Note: only the full merged flash works locally the fast flash seems to have a compression issue
 
 
 for the esp tool I changed at the very bottom of the code, to switch it from a module
