@@ -4018,7 +4018,7 @@ async function myFlashFw() {
 
   sts.textContent = '⏳ Loading esptool-js v0.5.7...';
   try {
-    const { ESPLoader, Transport } = await import('esptool-js');
+    const { ESPLoader, Transport } = await import('./esptool-js.js');
 
     let flashPort = mySerialPort;
     if (mySerialConnected) {
