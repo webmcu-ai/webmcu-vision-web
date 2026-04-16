@@ -5,6 +5,7 @@
 <title>XIAO ML Kit Training over WebSerial. v122</title>
 <script src=".\tfjs.js"></script>
 <script src=".\jszip.min.js"></script>
+<script src=".\esptool-js.js"></script>
 
 <!--
 to make this file portable I have changed these lines
@@ -4018,7 +4019,9 @@ async function myFlashFw() {
 
   sts.textContent = '⏳ Loading esptool-js v0.5.7...';
   try {
-    const { ESPLoader, Transport } = await import('./esptool-js.js');
+   // const { ESPLoader, Transport } = await import('./esptool-js.js');
+    const ESPLoader = window.esptool.ESPLoader;
+    const Transport = window.esptool.Transport;
 
     let flashPort = mySerialPort;
     if (mySerialConnected) {
