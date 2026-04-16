@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>XIAO ML Kit Training over WebSerial. v122</title>
-<script src=".\tfjs"></script>
+<script src=".\tfjs.js"></script>
 <script src=".\jszip.min.js"></script>
 
 <!--
@@ -15,7 +15,7 @@ to make this file portable I have changed these lines
   around lines 100  
   const { ESPLoader, Transport } = await import('https://unpkg.com/esptool-js@0.5.7/bundle.js');  
   changed to 
-      const { ESPLoader, Transport } = await import('./esptool-js@');
+      const { ESPLoader, Transport } = await import('./esptool-js.js');
 -->
   
 <style>
