@@ -1,5 +1,3 @@
-
-
 // ======================================================
 // XIAO ML KIT (OR XIAO ESP32S3 SENSE)
 // FULL VISION ML  — v70
