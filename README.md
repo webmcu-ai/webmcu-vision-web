@@ -13,7 +13,9 @@ Needs Seeedstudio XIAO ML Kit connected through webSerial
 Proof of concept for on-device training pagper github at  <a href="https://github.com/webmcu-ai/on-device-vision-ai">https://github.com/webmcu-ai/on-device-vision-ai</a>
 
 
+Note: The [CITATION.cff](CITATION.cff) will be updated soon with an arXIV reference.
 
+The main github link is [https://github.com/webmcu-ai/webmcu-vision-web](https://github.com/webmcu-ai/webmcu-vision-web) if you are on an old release.
 
 Single HTML file. No installation. Open in Chrome or Edge, plug in your ESP32, and train a visual classifier in under 90 minutes on $15–40 USD hardware. All data stays on your local machine.
 
