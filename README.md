@@ -23,7 +23,7 @@ Part of the [webmcu-ai](https://github.com/webmcu-ai) series — a set of open t
 
 ## Quick Start
 
-1. Download `index.html` from this repository (or clone it).
+1. Use the live webpage [index.html](https://webmcu-ai.github.io/webmcu-vision-web/index.html) or download this repository, unzip it.
 2. Open `index.html` in **Chrome** or **Edge** (not Firefox, not Safari — WebSerial is required).
 3. Plug your XIAO ESP32-S3 Sense into USB.
 4. Click **Flash Device** (Section 1) to flash the firmware — no Arduino IDE needed.
