@@ -13,7 +13,7 @@ Needs Seeedstudio XIAO ML Kit connected through webSerial
 Proof of concept for on-device training paper 1 github at  <a href="https://github.com/webmcu-ai/on-device-vision-ai">https://github.com/webmcu-ai/on-device-vision-ai</a>
 
 
-Note: The [CITATION.cff](CITATION.cff) will be updated soon with an arXIV reference.
+Note: The [CITATION.cff](CITATION.cff) is updated.
 
 The main github link is [https://github.com/webmcu-ai/webmcu-vision-web](https://github.com/webmcu-ai/webmcu-vision-web) if you are on an old release.
 
