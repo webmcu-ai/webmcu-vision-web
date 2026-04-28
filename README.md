@@ -10,7 +10,7 @@ Active WebSerial Page at  [https://webmcu-ai.github.io/webmcu-vision-web/index.h
 
 Needs Seeedstudio XIAO ML Kit connected through webSerial
 
-Proof of concept for on-device training pagper github at  <a href="https://github.com/webmcu-ai/on-device-vision-ai">https://github.com/webmcu-ai/on-device-vision-ai</a>
+Proof of concept for on-device training paper 1 github at  <a href="https://github.com/webmcu-ai/on-device-vision-ai">https://github.com/webmcu-ai/on-device-vision-ai</a>
 
 
 Note: The [CITATION.cff](CITATION.cff) will be updated soon with an arXIV reference.
