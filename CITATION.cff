@@ -1,8 +1,50 @@
-Stub here until arXIV reference is available
-
-
-The main github will have the citation as soon as it is ready.
-
-https://github.com/webmcu-ai/webmcu-vision-web
-
-
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+type: article
+title: "WebSerial Vision Training for Microcontrollers: A Browser-Based Companion to On-Device CNN Training"
+authors:
+  - family-names: Ellis
+    given-names: Jeremy
+    affiliation: "High School Robotics Educator, British Columbia, Canada"
+    orcid: "https://orcid.org/0009-0008-3880-1344"
+doi: "10.48550/arXiv.2604.22834"
+repository-code: "https://github.com/webmcu-ai/webmcu-vision-web"
+url: "https://arxiv.org/abs/2604.22834"
+identifiers:
+  - type: doi
+    value: "10.48550/arXiv.2604.22834"
+    description: "arXiv DOI"
+  - type: url
+    value: "https://arxiv.org/abs/2604.22834"
+    description: "arXiv preprint arXiv:2604.22834 [cs.CV]"
+abstract: >
+  This paper presents webmcu-vision-web, a single-file, zero-install browser
+  application for end-to-end TinyML vision model training and deployment on the
+  Seeed Studio XIAO ESP32-S3 Sense (XIAO ML Kit, $15-40 USD). Acting as a
+  browser-based companion to the on-device Arduino firmware of Paper 1, it
+  provides a private, fully local machine learning pipeline, from firmware
+  flashing through image collection, CNN training, weight export, and live
+  activation visualization, without any software installation beyond a
+  Chromium-based browser. Key capabilities include: in-browser firmware flashing
+  via esptool-js; an SD card file browser with image preview and inline editing;
+  config.json live-sync for zero-recompile hyperparameter adjustment; webcam and
+  ESP32 OV2640 camera image capture; TensorFlow.js CNN training completing a
+  three-class run in approximately 1 minute browser-side versus 9 minutes
+  on-device; weight export as myWeights.bin and myWeights.h; confusion matrix;
+  and a live Conv2 activation heatmap streamed from the ESP32 during inference.
+  No data leaves the local machine at any stage.
+keywords:
+  - TinyML
+  - EdgeAI
+  - WebSerial
+  - browser-based interface
+  - ESP32-S3
+  - convolutional neural networks
+  - microcontrollers
+  - embedded machine learning
+  - education
+  - heatmap visualization
+  - TensorFlow.js
+  - esptool-js
+license: MIT
+date-released: "2026-04-20"
