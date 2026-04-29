@@ -924,7 +924,7 @@ function myRenderClassRows() {
 
 // ─────────────────────────────────────────────────────────
 // SERIAL CLASS BUTTONS — dynamic, with selected-state colour
-// and smart retap (second press sends 't' to advance menu).
+// and smart retap (second press sends 'L' to return to menu).
 // ─────────────────────────────────────────────────────────
 var mySerialSelectedClass = -1;  // which class button is currently highlighted (-1 = none)
 
@@ -959,8 +959,8 @@ function myRenderSerialButtons() {
 
 function mySerialClassTap(i) {
   if (mySerialSelectedClass === i) {
-    // Already selected — send 't' to advance the device menu instead
-    mySendSerialChar('t');
+    // Already selected — send 'L' to advance the device menu instead
+    mySendSerialChar('L');
     mySerialClearSelected();
   } else {
     // First tap — send the class char and highlight the button
