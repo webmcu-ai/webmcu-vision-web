@@ -918,7 +918,6 @@ function myRenderClassRows() {
     const el = document.getElementById('myLabel' + i);
     if (el) el.addEventListener('input', myRefreshConfigTextarea);
   }
-  myUpdateFolderStatus();
 }
 
 // Called when the user changes the class-count selector
@@ -2523,6 +2522,8 @@ async function myPickSaveFolder() {
 async function myScanFolderCounters() {
   if (!mySaveFolder) return;
   for (let i = 0; i < myNumClasses; i++) {
+    try {
+      const classDir = await myGetClassDir(i, false);
       let count = 0, maxN = 0;
       for await (const [name] of classDir.entries()) {
         if (/\.(jpg|jpeg)$/i.test(name)) {
