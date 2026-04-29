@@ -1,0 +1,4358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>XIAO ML Kit Training over WebSerial. v122</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+
+table td, table th {
+  padding: 10px;
+}
+
+/* ── Flash Firmware Section ── */
+.myFlashOption {
+  border: 1px solid #aaa;
+  border-radius: 5px;
+  padding: 14px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.myFlashOption:hover { border-color: #0088cc; }
+.myFlashOption.myFlashSel { border-color: #0088cc; background: rgba(0,136,204,.06); }
+.myFlashOption h3 { font-size: .95rem; color: #0055aa; margin: 0 0 6px 0; }
+.myFlashOption p  { font-size: .82rem; color: #555; line-height: 1.5; margin: 0 0 10px 0; }
+.myFlashFrow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.myFlashFlbl { font-size: .75rem; color: #666; width: 120px; flex-shrink: 0; }
+.myFlashFrow input[type=file] { flex: 1; font-size: .78rem; }
+.myFlashFrow input[type=text] { width: 80px; font-size: .78rem; }
+.myProgWrap  { height: 8px; background: #ddd; border-radius: 4px; margin: 8px 0; overflow: hidden; display: none; }
+.myProgBar   { height: 100%; background: #0088cc; width: 0%; transition: width .2s; }
+
+/* ── SD Browser ── */
+.mySdList { border: 1px solid #ccc; border-radius: 4px; min-height: 80px; max-height: 240px; overflow-y: auto; background: #fafafa; font-family: monospace; font-size: 0.82em; }
+.mySdEntry { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid #eee; cursor: pointer; user-select: none; }
+.mySdEntry:hover { background: #e8f4ff; }
+.mySdEntry.mySdSelected { background: #cce8ff; }
+.mySdEntryDir .mySdName { color: #885500; }
+.mySdName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mySdSize { color: #888; font-size: 0.75em; flex-shrink: 0; }
+.mySdBreadcrumb { font-family: monospace; font-size: 0.82em; padding: 4px 6px; background: #f0f0f0; border-radius: 3px; margin-bottom: 4px; }
+.mySdBcItem { color: #0055aa; cursor: pointer; }
+.mySdBcItem:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1 align=center>XIAO ML Kit Training over WebSerial. </h1>
+<p>Train a 2 layer Vision CNN AI model in the browser · Export weights to PC and the to ESP32 SD card · WebSerial ESP32 camera capture · Flash firmware from browser</p>
+
+<p>Base github for this page at <a href="https://github.com/webmcu-ai/webmcu-vision-web">github.com/webmcu-ai/webmcu-vision-web</a>. </p>
+<p>While proof of concept esp32s3 on-device training github is at <a href="https://github.com/webmcu-ai/on-device-vision-ai">https://github.com/webmcu-ai/on-device-vision-ai</a> </p>
+
+<br><hr><br>
+
+<div id="myCodeSpace">
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 1 — FLASH FIRMWARE
+     Uses esptool-js v0.5.7 to flash compiled .bin files directly from
+     the browser over WebSerial — no extra software needed.
+═══════════════════════════════════════════════════════════════════ -->
+
+<h2>1 · Flash Firmware</h2>
+
+<p>Flash compiled ESP32 .bin files directly from the browser using <b>esptool-js v0.5.7</b>.<br>
+Requires Chrome/Edge · HTTPS or localhost · USB CDC On Boot: Enabled</p>
+<p>If you want to look at the code and load the sketch onto your Arduino IDE it is here in text form <a href="firmware.ino">firmware.ino</a></p>
+
+<div style="border-left:3px solid #f90; padding:6px 12px; background:#fffbe6; margin-bottom:14px; font-size:.85rem; color:#664400;">
+  <b>⚠ MUST REFRESH WEBPAGE FIRST</b> before flashing (clears previous WebSerial state),
+  then unplug and replug the ESP32 after flash completes.
+</div>
+
+<!-- Option A -->
+<div class="myFlashOption myFlashSel" id="myOptA" onclick="mySelFlash('A')">
+  <h3>▸ Option A — Sketch Only (flash.ino.bin)</h3>
+  <p>Flashes only the application partition at 0x10000. Fast. Preserves bootloader and NVS.<br>
+     Use when the bootloader is already on the device (standard re-flash).</p>
+  <div id="myInputsA">
+    <div class="myFlashFrow">
+      <span class="myFlashFlbl">Browse (optional)</span>
+      <input type="file" id="myFSketch" accept=".bin">
+      <input type="text" id="myASketch" value="0x10000">
+    </div>
+    <div style="font-size:.75rem; color:#666; margin-top:4px;">
+      Default auto-loaded: <b>flash.ino.bin</b> · Browse to override
+    </div>
+  </div>
+</div>
+
+<!-- Option B -->
+<div class="myFlashOption" id="myOptB" onclick="mySelFlash('B')">
+  <h3>▸ Option B — Full Merged Flash (flash.ino.merged.bin)</h3>
+  <p>Flashes a single merged binary: bootloader + partition table + app at 0x0.<br>
+     Use for fresh chips or after partition changes.</p>
+  <div id="myInputsB" style="display:none;">
+    <div class="myFlashFrow">
+      <span class="myFlashFlbl">Browse (optional)</span>
+      <input type="file" id="myFMerged" accept=".bin">
+      <input type="text" id="myAMerged" value="0x0">
+    </div>
+    <div style="font-size:.75rem; color:#666; margin-top:4px;">
+      Default auto-loaded: <b>flash.ino.merged.bin</b> · Browse to override
+    </div>
+  </div>
+</div>
+
+<div class="myProgWrap" id="myProgWrap"><div class="myProgBar" id="myProgBar"></div></div>
+<button onclick="myFlashFw()" style="font-weight:bold; font-size:1rem; padding:8px 20px;">⚡ Flash Device</button>
+<div id="myFlashSts" style="font-size:.82rem; color:#555; margin-top:8px; min-height:16px;"></div>
+
+<details style="font-size:.8rem; color:#555; margin-top:8px;">
+  <summary style="cursor:pointer; color:#0055aa;">ℹ Locating .bin files in Arduino IDE 2.x</summary>
+  <div style="padding:8px 0 0 10px; line-height:1.8;">
+    Enable: <i>File → Preferences → Show verbose output during: compilation</i><br>
+    The build path is printed at the end of the compilation log.<br><br>
+    <b>Option A</b> — Sketch only: <code>YourSketch.ino.bin</code> → 0x10000<br>
+    <b>Option B</b> — Merged: <code>YourSketch.ino.merged.bin</code> → 0x0<br>
+    (Arduino IDE 2.x also exports via <i>Sketch → Export Compiled Binary</i>)
+  </div>
+</details>
+
+<br><br>
+
+<table border=1  >
+<tr><td>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 2 — ESP32 WEBSERIAL + SD BROWSER
+═══════════════════════════════════════════════════════════════════ -->
+
+
+<div id="mySerialTile" style="position: relative; border: 1px solid black; background: white; display: flex; flex-direction: column; overflow: hidden;">
+    <div onmousedown="myStartDragging(event, 'mySerialTile')" style="background: #ccc; cursor: move; user-select: none; padding: 5px; font-weight: bold;">
+
+
+<h2> · ESP32 WebSerial &amp; SD Browser</h2>
+
+<p>Connect your XIAO ESP32S3 Sense via USB · requires Chrome/Edge · USB CDC On Boot: Enabled</p>
+
+<div id="mySerialStatus" style="font-weight:bold;">Not Connected</div>
+
+<br>
+
+<button onclick="myConnectSerial()">Connect ESP32</button>
+<button onclick="myDisconnectSerial()">Disconnect</button>
+
+<br><br>
+
+<label>Send command:</label>
+<input type="text" id="mySerialCmd" placeholder="type command + Enter" onkeydown="if(event.key==='Enter') mySendSerialLine()">
+<button onclick="mySendSerialLine()">Send</button>
+<br>
+<small>
+  <button onclick="mySendSerialChar('t')" title="Next menu item">t=Next</button>
+  <button onclick="mySendSerialChar('l')" title="Select/Unselect menu item">l=Select/Unselect</button>
+  <button onclick="mySendSerialChar('1')">1=Class0</button>
+  <button onclick="mySendSerialChar('2')">2=Class1</button>
+  <button onclick="mySendSerialChar('3')">3=Class2</button>
+  <button onclick="mySendSerialChar('4')">4=Train</button>
+  <button onclick="mySendSerialChar('5')">5=Infer</button>
+ <!-- <button onclick="mySendSerialChar('6')">6=Stream</button> -->
+</small>
+
+<br><br>
+
+<b>Serial Monitor</b><br>
+<pre id="mySerialLog" style="height:160px; overflow-y:auto; font-family:monospace; background:#1e1e1e; color:#d4d4d4; padding:6px; font-size:0.82em; margin:0; border:1px solid #555; border-radius:3px; resize:vertical; white-space:pre-wrap; word-break:break-all;">Serial output will appear here...
+</pre>
+<button onclick="document.getElementById('mySerialLog').textContent='Serial output will appear here...\n'">Clear Log</button>
+<button onclick="navigator.clipboard.writeText(document.getElementById('mySerialLog').textContent).then(()=>myLog('Serial log copied to clipboard')).catch(e=>myLog('Copy failed: '+e.message))">📋 Copy Log</button>
+<label><input type="checkbox" id="mySerialAutoScroll" checked> Auto-scroll</label>
+
+<br><br>
+</div>
+    <div onmousedown="myStartResizing(event, 'mySerialTile')" title="Drag to resize" style="position: absolute; bottom: 0; right: 0; width: 18px; height: 18px; cursor: nwse-resize; display: flex; align-items: flex-end; justify-content: flex-end; line-height: 1; font-size: 14px; color: #888; user-select: none;">⊿</div>
+</div>
+
+</td><td>
+
+<!-- ── SD Browser ── -->
+<b>SD Card Browser</b>
+<p>Browse, view, and delete files on the ESP32 SD card. Requires firmware with SD_LIST / SD_DELETE support (esp_all_menu_image_train_infer68).</p>
+
+<div class="mySdBreadcrumb" id="mySdBreadcrumb">
+  <span class="mySdBcItem" onclick="mySdNavigate('/')">/ (root)</span>
+</div>
+
+<div class="mySdList" id="mySdList">
+  <div style="padding:12px; color:#888;">Connect ESP32 then press Refresh to browse SD card</div>
+</div>
+
+<br>
+<button onclick="mySdRefresh()">⟳ Refresh</button>
+<button id="mySdDeleteBtn" style="display:none;" onclick="mySdDeleteSelected()">🗑 Delete Selected</button>
+<button onclick="mySdGoUp()">↑ Up</button>
+
+<!-- SD File Viewer (image / text) -->
+<div id="mySdViewer" style="margin-top:8px; display:none;">
+  <b id="mySdViewerName" style="font-family:monospace;">—</b><br>
+  <img id="mySdViewerImg" style="max-width:240px; display:none; border:1px solid #ccc; margin-top:4px;" alt="SD image preview">
+  <textarea id="mySdViewerText" rows="8" cols="60" style="display:none; font-family:monospace; font-size:0.8em;" spellcheck="false"></textarea>
+  <br>
+  <button id="mySdSaveTextBtn" style="display:none;" onclick="mySdSaveTextFile()">💾 Save changes to SD</button>
+  <button id="mySdDownloadBtn" style="display:none;" onclick="mySdDownloadFile()">↓ Download to PC</button>
+</div>
+
+
+
+<!-- Activity Log moved to bottom -->
+
+<!-- Sync config from SD -->
+<b>Sync config from SD card</b><br>
+<p>Read /header/config.json from SD and update all fields including class names.</p>
+<button onclick="mySdReadConfig()">⟳ Refresh config.json from SD</button>
+
+<br><br>
+
+</td></tr>
+
+
+<tr><td>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 4 — CAMERA & DATA COLLECTION
+═══════════════════════════════════════════════════════════════════ -->
+
+<div id="myCamTile" style="position: relative; border: 1px solid black; background: white; display: flex; flex-direction: column; overflow: hidden;">
+    <div onmousedown="myStartDragging(event, 'myCamTile')" style="background: #ccc; cursor: move; user-select: none; padding: 5px; font-weight: bold;">
+
+
+<h2>4 · Camera &amp; Data Collection</h2>
+
+<label>
+  <input type="checkbox" id="myGrayscaleToggle" onchange="myCheckGrayscaleChange()">
+  Use Grayscale Mode
+</label>
+<p>Set BEFORE starting — 3x smaller model, needs more data</p>
+
+<br>
+
+<label>Input Resolution:</label>
+<select id="myResolutionSelect" onchange="myOnResolutionSelect()">
+  <option value="64">64x64 (~6 FPS)</option>
+  <option value="96">96x96 (~2.3 FPS)</option>
+  <option value="112">112x112 (~1.7 FPS)</option>
+  <option value="128">128x128 (~1.3 FPS)</option>
+  <option value="144">144x144 (~1.0 FPS)</option>
+  <option value="160">160x160 (~0.9 FPS)</option>
+  <option value="192">192x192 (~0.6 FPS)</option>
+  <option value="240">240x240 (~0.4 FPS)</option>
+  <option value="custom">Custom...</option>
+</select>
+<input type="number" id="myResolutionCustom" value="64" min="8" max="240" step="2"
+       style="display:none;" onchange="myOnResolutionCustom()">
+<br>
+<div id="myResolutionHint">Training resolution: 64x64 — conv2 out: 29x29</div>
+
+<br>
+
+<!-- Camera source toggle -->
+<label>Camera Source:</label>
+<select id="myCameraSelect" title="Select webcam or ESP32 camera via WebSerial"></select>
+<br><br>
+
+<!-- Single shared preview area — shows webcam OR ESP32 camera -->
+<div style="display:inline-block; position:relative;">
+  <video id="myVideo1" width="240" height="240" autoplay playsinline style="display:block; border:1px solid #ccc;"></video>
+  <canvas id="myCanvas1" width="240" height="240" style="display:none; border:1px solid #ccc;"></canvas>
+  <!-- ESP32 camera: live image preview (shown when ESP32 is selected) -->
+  <img id="myEspImg" width="240" height="240" style="display:none; border:1px solid #ccc; background:#111;" alt="ESP32 camera">
+  <div id="myEspOverlay" style="display:none; position:absolute; top:4px; left:4px; background:rgba(0,0,0,0.55); color:#0cf; font-size:.7em; padding:2px 6px; border-radius:3px;">ESP32</div>
+</div>
+
+<br><br>
+
+<button id="myStartBtn" onclick="myStartAll()">Start Camera &amp; Brain</button>
+<button id="myStopCameraBtn" onclick="myStopCamera()" style="display:none;">Stop Camera</button>
+
+<!-- ESP32 live stream controls (only visible when ESP32 camera selected) -->
+<div id="myEspStreamControls" style="display:none; margin-top:8px;">
+  <button onclick="myRequestEspFrame()">📷 Single Frame</button>
+  <button id="myEspStreamBtn" onclick="myToggleEspStream()">▶ Start Stream</button>
+  <label>Interval (ms):</label>
+  <input type="number" id="myEspStreamInterval" value="800" min="200" max="5000" step="100" style="width:70px;">
+  <!-- Add Frame to Class + SD save DISABLED — SD card saving being reworked in a future version.
+       Use 📷 Capture button in the class rows below instead (saves to PC project folder).
+  <br><br>
+  <label>Add frame to class:</label>
+  <select id="myEspCaptureClass">
+    <option value="0">Class 0</option>
+    <option value="1">Class 1</option>
+    <option value="2">Class 2</option>
+  </select>
+  <button onclick="myAddEspFrameToClass()">Add Last Frame to Class + Save to SD</button>
+  <br><small>Adds frame to browser buffer AND saves JPEG to SD /images/ClassName/ (if WebSerial connected)</small>
+  -->
+</div>
+
+<br><br>
+
+</div>
+    <div onmousedown="myStartResizing(event, 'myCamTile')" title="Drag to resize" style="position: absolute; bottom: 0; right: 0; width: 18px; height: 18px; cursor: nwse-resize; display: flex; align-items: flex-end; justify-content: flex-end; line-height: 1; font-size: 14px; color: #888; user-select: none;">⊿</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     IMAGE STORAGE — PC FOLDER + SD CARD
+     Pick a PC folder once; every Capture auto-saves there.
+     RAM window (myMaxBuffer) controls how many tensors training
+     cycles through at a time — disk holds everything forever.
+     SD sync is a separate manual step (stop streaming first).
+═══════════════════════════════════════════════════════════════════ -->
+<div style="border:1px solid #bbd; border-radius:4px; padding:10px 14px; margin-bottom:10px; background:#f4f8ff;">
+  <b>📁 PC Project Folder</b>
+  <span id="myFolderStatus" style="margin-left:10px; font-size:0.85em; color:#888;">None — images held in RAM only</span><br>
+  <small style="color:#555;">Pick a <b>project root</b> folder — mirrors SD card structure exactly:
+  <code>root/images/ClassName/</code> and <code>root/header/</code> are created automatically.
+  Every Capture saves to <code>images/ClassName/img_NNNN.jpg</code>.</small><br><br>
+  <button onclick="myPickSaveFolder()">📂 Choose Project Folder</button>
+  <button onclick="myForgetSaveFolder()" id="myForgetFolderBtn" style="display:none;">✕ Forget</button>
+  <button onclick="myPickAndLoadFolder()" title="Load images from an existing project folder into the RAM training window">📂 Load images from folder</button>
+  <button onclick="myLoadModelFromFolder()" title="Load myWeights.bin from project folder/header/ into the TFJS model">📂 Load model from folder</button>
+</div>
+
+<label>RAM window per class (max images in training buffer):</label>
+<input type="number" id="myMaxBufferInput" value="2000" min="5" max="50000" onchange="myUpdateMaxBuffer()">
+<span id="myRamHint" style="font-size:0.82em; color:#666; margin-left:8px;"></span>
+<p style="margin:2px 0 8px 0; font-size:0.82em; color:#555;">
+  Maximum images held in browser RAM per class. Set high enough to hold all your images — disk folder holds all images regardless.
+  Lower only if you hit browser memory limits.
+</p>
+
+<button onclick="mySaveModel()">Save TFJS Model</button>
+<button onclick="myLoadModel()">Load TFJS Model</button>
+<button onclick="myLoadWeightsBinFromSd()">Load myWeights.bin from SD</button>
+
+<br><br>
+
+<!-- Class count selector + config load -->
+<label><b>Number of Classes:</b></label>
+<select id="myNumClassesSelect" onchange="myOnNumClassesChange(this.value)">
+  <option value="2">2</option>
+  <option value="3" selected>3</option>
+  <option value="4">4</option>
+  <option value="5">5</option>
+  <option value="6">6</option>
+  <option value="7">7</option>
+  <option value="8">8</option>
+</select>
+&nbsp;&nbsp;
+<button onclick="myLoadConfigJsonFromPC()" title="Load a config.json file from your PC — sets number of classes and label names">📄 Load config.json from PC</button>
+<p style="margin:2px 0 8px 0; font-size:0.82em; color:#555;">
+  Change class count here, or load a <code>config.json</code> to set classes automatically. ⚠ Changing classes resets all image buffers.
+</p>
+
+<!-- Class capture rows — generated dynamically by myRenderClassRows() -->
+<div id="myClassRows"></div>
+
+<br><br>
+
+<!-- SD sync — DISABLED pending reliable binary transfer implementation.
+     For now: copy images manually from your PC project folder to the ESP32 micro SD card.
+     The folder structure mirrors the SD card exactly: images/ClassName/img_NNNN.jpg
+     Simply eject the SD card, copy the images/ folder contents, and re-insert.
+<div style="border:1px solid #cdc; border-radius:4px; padding:8px 12px; background:#f4fff4;">
+  <b>💾 Sync to ESP32 SD card</b><br>
+  <small style="color:#555;">Copies all images from the PC folder to <code>/images/ClassName/</code> on SD.
+  <b>Stop ESP32 streaming first</b> — this uses the same serial port.</small><br><br>
+  <button onclick="mySyncFolderToSd()" id="mySyncSdBtn">💾 Sync PC Folder → SD Card</button>
+  <span id="mySyncSdStatus" style="font-size:0.82em; color:#555; margin-left:10px;"></span>
+</div>
+-->
+
+<br>
+
+<p style="font-size:0.82em; color:#555;">
+  <b>📷 Capture</b> = grab frame · auto-saves to <code>images/ClassName/</code> if folder set ·
+  <b>Load from PC</b> = pick individual files into RAM window ·
+  <b>📂 Load from Folder</b> = loads from existing project folder's <code>images/</code> sub-folders into RAM ·
+  <b>📂 Load from SD</b> = pull from ESP32 SD card ·
+  <b>Clear RAM</b> = frees tensors only (disk and SD untouched) ·
+  <b>To copy images to ESP32 SD</b>: eject SD card, copy <code>images/</code> folder manually from your PC project folder, re-insert.
+</p>
+
+<br><br>
+
+</td><td>
+
+
+<div id="myOutputDisplay">Ready...</div>
+
+<br>
+
+<button id="myStopAnalysisBtn" onclick="myStopAnalysis()" disabled>Stop Analysis</button>
+<button id="myStartAnalysisBtn" onclick="myStartAnalysis()" style="display:none;">Start Analysis</button>
+<br>
+<button onclick="myDebugCurrentFrame()">Debug Current Frame</button>
+
+<br><br>
+
+<!-- Conv2 heatmap panel — fed by ESP32 HEATMAP: lines OR browser-side extraction -->
+<div id="myHeatmapPanel" style="display:none;">
+  <b>Conv2 Activation Heatmap</b>
+  <span id="myHeatmapDims" style="font-size:0.8em; color:#666; margin-left:8px;"></span>
+  <span id="myHeatmapSource" style="font-size:0.75em; color:#0055aa; margin-left:8px;"></span><br>
+  <small style="color:#888;">Max activation across all Conv2 filters · blue=low · red=high</small><br>
+  <canvas id="myHeatmapCanvas" width="162" height="162"
+          style="border:1px solid #ccc; margin-top:4px; image-rendering:pixelated;"></canvas>
+  <br>
+</div>
+<button id="myHeatmapLiveBtn" onclick="myToggleHeatmapLive()">▶ ESP32 Heatmap</button>
+<small style="color:#888;"> (ESP32 on-device inference · slightly reduces ESP32 FPS)</small><br>
+<button id="myBrowserHeatmapBtn" onclick="myToggleBrowserHeatmap()">▶ Browser Heatmap</button>
+<small style="color:#888;"> (webcam / ESP32 stream · runs in browser, no ESP32 FPS impact)</small>
+
+<br><br>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 5 — TRAINING PROGRESS
+═══════════════════════════════════════════════════════════════════ -->
+
+<h2>5 · Training Progress</h2>
+
+Batches Trained: <span id="myEpochDisplay">0</span><br>
+Min Samples: <input type="number" id="myMinSamples" value="10" min="1" max="100">
+
+<br><br>
+
+<label>
+  <input type="checkbox" id="myUseAllData" checked onchange="myToggleEpochMode()"> Use All Data (systematic epochs)
+</label>
+
+<br>
+
+<div id="myEpochControls">
+  <label>Target Epochs:</label>
+  <input type="number" id="myTargetEpochs" value="20" min="0" step="0.5">
+  <p id="myEpochHint"></p>
+</div>
+<div id="myBatchControls" style="display:none;">
+  <label>Max Batches:</label>
+  <input type="number" id="myMaxBatches" value="40" min="0">
+</div>
+
+<br>
+
+<label>Batch Size:</label>
+<input type="number" id="myBatchSize" value="6" min="3" max="30" step="3">
+<br>
+<label>Learning Rate:</label>
+<input type="number" id="myLearningRate" value="0.0003" min="0.00001" max="0.01" step="0.0001">
+<br>
+<label>Dropout Rate:</label>
+<input type="number" id="myDropoutRate" value="0.3" min="0.0" max="0.9" step="0.1">
+
+<br><br>
+
+Avg Loss: <span id="myLossDisplay">--</span><br>
+Status: <span id="myStatusDisplay">Waiting...</span>
+
+<br><br>
+
+<button id="myPauseBtn" onclick="myPauseTraining()" disabled>Pause</button>
+<button id="myResumeBtn" onclick="myResumeTraining()" style="display:none;">Resume</button>
+
+<br>
+<div id="myProgressBarWrap" style="height:10px; background:#ccc;">
+  <div id="myProgressBar" style="height:100%; background:green; width:0%;"></div>
+</div>
+
+<br>
+
+<label>
+  <input type="checkbox" id="myAutoSaveWeights">
+  Auto-save weights every 10 batches (saves .bin + .h to project folder when set)
+</label>
+<br>
+<small style="color:#555;">Leave unchecked to protect a well-trained model from being overwritten during continued training.
+Manual <b>Export myWeights.bin</b> and <b>Export myWeights.h</b> buttons always work on demand.</small>
+
+<br><br>
+
+<h3>Confusion Matrix</h3>
+<button onclick="myUpdateConfusionMatrix()">Update Confusion Matrix</button>
+<div id="myConfusionMatrixContainer" style="margin-top:10px; font-family:monospace;">
+  </div>
+
+<br>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     ACTIVITY LOG — placed here for easy access alongside training
+═══════════════════════════════════════════════════════════════════ -->
+<h3>Activity Log</h3>
+<div id="myDivHistory" style="height:200px; overflow-y:auto; font-family:monospace; background:#eee; padding:8px; font-size:0.85em;">Logs will appear here...</div>
+<button onclick="document.getElementById('myDivHistory').innerHTML=''">Clear Log</button>
+
+<br>
+
+</td></tr>
+
+
+<tr><td>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 6 — ESP32 EXPORT
+═══════════════════════════════════════════════════════════════════ -->
+
+<h2>6 · ESP32 Export (SD Format)</h2>
+
+<p>Exports weights + config for the XIAO ESP32S3 Sense. Copy files to SD card /header/ folder.</p>
+
+<label>Firmware Version:</label>
+<input type="number" id="myBinVersion" value="50" min="1" onchange="myRefreshConfigTextarea()">
+
+<br><br>
+
+<label>
+  <input type="checkbox" id="myExportAugmentation" onchange="myRefreshConfigTextarea()" checked> useAugmentation (flip + brightness on ESP32)
+</label><br>
+<label>
+  <input type="checkbox" id="myExportGrayscale" onchange="myRefreshConfigTextarea()"> useGrayscale (must match model colour mode)
+</label><br>
+<label>
+  <input type="checkbox" id="myExportImagesToPsram" checked onchange="myRefreshConfigTextarea()"> imagesToPsram 
+</label><br>
+<label>validationImages :</label>
+<input type="number" id="myExportValidationImages" value="3" min="0" max="20" onchange="myRefreshConfigTextarea()">
+<p>imagesToPsram = preload all training images to PSRAM before training. validationImages = last N images per class held out for validation.</p>
+
+<br>
+
+<button onclick="myExportBin()">Export myWeights.bin</button>
+<!-- <button onclick="myExportBinToSd()">💾 Export myWeights.bin to SD /header/</button>  -->
+<p>Binary: JSON header + float32 weights. Saves to <code>project_folder/header/myWeights.bin</code> if a project folder is set, otherwise to PC Downloads. Auto-saved every 10 batches when the auto-save toggle is checked — copy to SD card <code>/header/myWeights.bin</code> manually.<br>
+<!-- SD button sends directly to SD card via WebSerial (requires connected ESP32).</p> -->
+
+<button onclick="myExportWeightsH()">Export myWeights.h</button>
+<!-- <button onclick="myExportWeightsHToSd()">💾 Export myWeights.h to SD /header/</button>  -->
+<p>C header file — copy to sketch folder alongside your .ino, then uncomment <code>#define USE_BAKED_WEIGHTS</code> to compile weights directly into firmware (v66+). Saves to <code>project_folder/header/myWeights.h</code> if a project folder is set, otherwise to PC Downloads. Auto-saved every 10 batches when the auto-save toggle is checked.<br>
+<!-- SD button saves to /header/myWeights.h via WebSerial — the ESP32 also generates this automatically after training.</p> -->
+
+<br>
+
+</td><td>
+
+<b>config.json — Direct Download</b><br>
+<p>Live textarea — edit freely before saving. Syncs from fields above.</p>
+<textarea id="myConfigTextarea" rows="30" cols="60" spellcheck="false"></textarea>
+<br>
+<button onclick="myExportConfigJson()">Save config.json to Downloads</button>
+<!-- SD config save DISABLED — SD card saving being reworked in a future version.
+<button onclick="myExportConfigJsonToSd()">💾 Save config.json to SD /header/</button>
+-->
+<p>Downloads button saves to your computer — copy to SD card /header/config.json manually.<br></p>
+
+<br>
+
+<div style="display:none;">
+<b>GENERATE .h Header File — Legacy / Optional</b><br>
+<p>For older firmware that reads weights from a compiled-in C header instead of the SD card.</p>
+<label>Use Int8: <input type="checkbox" id="myInt8Toggle"></label>
+<label>Name: <input type="text" id="myExportName" value="myModel"> .h</label>
+<br>
+<button onclick="myExportHeader()">Generate .h Header</button>
+</div>
+
+<br><br>
+
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 7 — SOURCE CODE EDITOR
+═══════════════════════════════════════════════════════════════════ -->
+
+<div style="display:none;">
+<h2>7 · View / Edit Source Code</h2>
+
+<button onclick="myToggleEditor()">Toggle Source Code Editor</button>
+<button id="myUpdateBtn" style="display:none;" onclick="myApplyAndRun()">Update &amp; Run</button>
+<br>
+<textarea id="myTextarea1" wrap="off" rows="2" style="width:98%; font-family:monospace; display:none; resize:vertical;"></textarea>
+</div>
+
+</div><!-- /myCodeSpace -->
+
+
+
+</td></tr>
+</table>
+
+<p>
+  By <a href="https://github.com/hpssjellis">Jeremy Ellis (hpssjellis)</a> ·
+  <a href="https://www.linkedin.com/in/jeremy-ellis-4237a9bb/">LinkedIn</a> ·
+  <a href="https://opencollective.com/mlsysbook">Support opencollective/mlsysbook</a> ·
+  <a href="https://www.seeedstudio.com/The-XIAOML-Kit.html">XIAO ML Kit $22 USD</a>
+  · Use at your own risk · MIT License
+</p>
+
+<br><hr><br>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 1 — STATE VARIABLES
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────
+var myModel, myTimer, myLastID = -1;
+var myNumClasses = 3;   // driven by config.json numLabels or the class-count selector
+var myTrainData = {0:[], 1:[], 2:[]};
+var myRawData   = {0:[], 1:[], 2:[]};
+var myMaxBuffer = 2000;
+var myEpochCount = 0;
+var myLossHistory = [];
+var myLossSum = 0, myLossCount = 0;
+var myTrainingPaused = false;
+var myAnalysisStopped = false;
+var myIsGrayscaleMode = false;
+var myGrayscaleRenderTimer = null;
+var myAllDataIndex = 0;
+var myCurrentEpoch = 0;
+var myShuffledData = [];
+var myCameraStopped = false;
+var myInputSize = 64;
+
+// Training log state — tracks rolling loss and when to log/validate
+var myLastLoggedBatch = 0;      // last myEpochCount value we wrote a log line for
+var myLastValBatch    = 0;      // last myEpochCount value we ran validation at
+
+// WebSerial state
+var mySerialPort = null;
+var mySerialReader = null;
+var mySerialWriter = null;
+var mySerialReadLoop = null;
+var mySerialBuffer = '';
+var mySerialConnected = false;
+
+// ESP32 camera state
+var myEspLastFrame = null;         // last decoded frame as ImageData (240x240)
+var myEspLastB64 = null;           // last raw b64 string for the image
+var myEspStreaming = false;        // true = continuous stream mode
+var myEspStreamTimer = null;       // setTimeout handle for stream pacing
+var myEspReceivingCam = false;     // true = collecting CAM_JPEG chunks
+var myEspCamChunks = [];           // accumulated CAM_JPEG base64 chunks
+var myEspReceivingJpeg = false;    // true = collecting old FRAME_B64 single-line
+var myEspJpegBytes = [];
+
+// SD browser state
+var mySdCwd = '/';
+var mySdEntries = [];
+var mySdSelectedPath = null;
+var mySdSelectedIsDir = false;
+var mySdCollectList = false;
+var mySdCollectContent = false;
+var mySdContentLines = [];
+var mySdCollectJpeg = false;
+var mySdJpegChunks = [];
+var mySdContentFile = null;
+var mySdReadingConfig = false;  // true when SD_READ is for config refresh, not file viewer
+var myBinLoadActive   = false;  // true when SD_READ is for myWeights.bin load
+var myBinLoadLines    = [];     // accumulates SD_LINE content for weights load
+
+// SD load-for-class state — used by myLoadFromSd()
+var mySdLoadClassId = -1;          // which class is currently being loaded from SD
+var mySdLoadQueue = [];            // array of full SD paths still to request
+var mySdLoadOnJpegDone = null;     // callback(b64) called when SD_JPEG_END fires during a load
+var mySdLoadCwd = '/';             // directory being listed during a class load
+
+// v66: heatmap state
+var myHeatmapLive = false;         // true = HEATMAP_ON sent, streaming continuously (ESP32 path)
+var myHeatmapPending = false;      // true = one-shot request in flight (HEATMAP_OFF on next receive)
+
+// v116: browser-side heatmap state
+var myBrowserHeatmap = false;      // true = extract Conv2 activations in browser each inference tick
+var myHeatmapModel = null;         // integer layer index for apply() path, or null=unset, -1=failed
+
+// v116+: auto-save folder state (File System Access API)
+var mySaveFolder = null;           // FileSystemDirectoryHandle picked by user, or null
+var myAutoSaveCounters = {0:1, 1:1, 2:1}; // next img number per class for auto-save filenames
+var myDiskTotals = {0:0, 1:0, 2:0};       // total images saved to disk per class (display only)
+
+// ─────────────────────────────────────────────────────────
+// Reinitialise per-class data structures after a class-count change.
+// Disposes any tensors in myTrainData before clearing.
+// ─────────────────────────────────────────────────────────
+function myReinitClassData(n) {
+  // dispose existing tensors
+  for (let i = 0; i < 20; i++) {
+    if (myTrainData[i]) { myTrainData[i].forEach(t => { try { t.dispose(); } catch(e){} }); }
+  }
+  myTrainData = {}; myRawData = {};
+  myAutoSaveCounters = {}; myDiskTotals = {};
+  for (let i = 0; i < n; i++) {
+    myTrainData[i] = []; myRawData[i] = [];
+    myAutoSaveCounters[i] = 1; myDiskTotals[i] = 0;
+  }
+}
+
+// Flash firmware state
+var myFlashMode = 'A';
+var myFlashSketchFile  = 'flash.ino.bin';
+var myFlashMergedFile  = 'flash.ino.merged.bin';
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 2 — RESOLUTION HELPERS
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+
+// Tiling variables and functions
+
+let myActiveElement = null;
+let myCurrentAction = null;
+let myStartX, myStartY, myStartLeft, myStartTop, myStartWidth, myStartHeight;
+let myMaxZ = 1000;
+
+function myBringToFront(el) {
+    myMaxZ++;
+    el.style.zIndex = myMaxZ;
+}
+
+function myStartDragging(myEvent, myId) {
+    myEvent.preventDefault();
+    myActiveElement = document.getElementById(myId);
+    myBringToFront(myActiveElement);
+    myCurrentAction = 'drag';
+    myStartX = myEvent.clientX;
+    myStartY = myEvent.clientY;
+    myStartLeft = parseInt(myActiveElement.style.left) || 0;
+    myStartTop = parseInt(myActiveElement.style.top) || 0;
+    window.onmousemove = myPerformAction;
+    window.onmouseup = myStopAction;
+}
+
+function myStartResizing(myEvent, myId) {
+    myEvent.preventDefault();
+    myActiveElement = document.getElementById(myId);
+    myBringToFront(myActiveElement);
+    myCurrentAction = 'resize';
+    myStartX = myEvent.clientX;
+    myStartY = myEvent.clientY;
+    myStartWidth = parseInt(myActiveElement.style.width) || 400;
+    myStartHeight = parseInt(myActiveElement.style.height) || 300;
+    window.onmousemove = myPerformAction;
+    window.onmouseup = myStopAction;
+}
+
+function myPerformAction(myEvent) {
+    if (!myActiveElement) return;
+    const myDeltaX = myEvent.clientX - myStartX;
+    const myDeltaY = myEvent.clientY - myStartY;
+    if (myCurrentAction === 'drag') {
+        myActiveElement.style.left = (myStartLeft + myDeltaX) + "px";
+        myActiveElement.style.top = (myStartTop + myDeltaY) + "px";
+    } else if (myCurrentAction === 'resize') {
+        myActiveElement.style.width = Math.max(100, myStartWidth + myDeltaX) + "px";
+        myActiveElement.style.height = Math.max(100, myStartHeight + myDeltaY) + "px";
+    }
+}
+
+function myStopAction() {
+    myActiveElement = null;
+    myCurrentAction = null;
+    window.onmousemove = null;
+    window.onmouseup = null;
+}
+
+
+
+// ─────────────────────────────────────────────────────────
+// RESOLUTION
+// ─────────────────────────────────────────────────────────
+function myGetConv2Out(sz) { return Math.floor((sz - 2) / 2) - 2; }
+
+function myResizeTensor(tensor3d, sz) {
+  return tf.image.resizeNearestNeighbor(tensor3d, [sz, sz], false, true);
+}
+
+function myUpdateResolutionHint() {
+  const sz  = myInputSize;
+  const c2  = myGetConv2Out(sz);
+  const flat = c2 * c2 * 8;
+  const hint = document.getElementById('myResolutionHint');
+  if (!hint) return;
+  const locked = !!myModel;
+  hint.innerHTML = locked
+    ? `Locked at ${sz}x${sz} — rebuild model to change`
+    : `Resolution: ${sz}x${sz} — conv2 out: ${c2}x${c2} — flat: ${flat} — Set BEFORE starting`;
+}
+
+function myOnResolutionSelect() {
+  if (myModel) {
+    alert('Resolution is locked once the model is built.\nRefresh the page to change.');
+    const sel = document.getElementById('myResolutionSelect');
+    const match = Array.from(sel.options).find(o => o.value === String(myInputSize));
+    if (match) sel.value = myInputSize; else sel.value = 'custom';
+    return;
+  }
+  const sel = document.getElementById('myResolutionSelect');
+  const custom = document.getElementById('myResolutionCustom');
+  if (sel.value === 'custom') {
+    custom.style.display = 'inline-block';
+    myInputSize = parseInt(custom.value) || 64;
+  } else {
+    custom.style.display = 'none';
+    myInputSize = parseInt(sel.value);
+  }
+  myUpdateResolutionHint();
+}
+
+function myOnResolutionCustom() {
+  if (myModel) return;
+  const val = parseInt(document.getElementById('myResolutionCustom').value) || 64;
+  myInputSize = Math.max(8, Math.min(240, val % 2 === 0 ? val : val - 1));
+  document.getElementById('myResolutionCustom').value = myInputSize;
+  myUpdateResolutionHint();
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 3 — GENERAL HELPERS
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────
+var myRawCanvas = document.createElement('canvas');
+myRawCanvas.width = 240; myRawCanvas.height = 240;
+var myRawCtx = myRawCanvas.getContext('2d');
+
+function myLog(msg) {
+  const div = document.getElementById('myDivHistory');
+  const t = new Date().toLocaleTimeString();
+  div.innerHTML = `<span>[${t}]</span> ${msg}<br>` + div.innerHTML;
+}
+
+function myUpdateMaxBuffer() {
+  myMaxBuffer = parseInt(document.getElementById('myMaxBufferInput').value) || 100;
+  myLog(`RAM window: ${myMaxBuffer} samples/class — training cycles through this many images at a time`);
+  myUpdateRamHint();
+}
+
+function myToggleEpochMode() {
+  const all = document.getElementById('myUseAllData').checked;
+  document.getElementById('myEpochControls').style.display = all ? 'block' : 'none';
+  document.getElementById('myBatchControls').style.display = all ? 'none' : 'block';
+  myUpdateEpochHint();
+}
+
+function myUpdateEpochHint() {
+  if (!document.getElementById('myUseAllData').checked) return;
+  const counts = [myTrainData[0].length, myTrainData[1].length, myTrainData[2].length];
+  const total  = counts.reduce((a,b) => a+b, 0);
+  const bs     = parseInt(document.getElementById('myBatchSize').value) || 6;
+  const bpe    = Math.ceil(total / bs);
+  const ep     = parseFloat(document.getElementById('myTargetEpochs').value) || 10;
+  const hint   = document.getElementById('myEpochHint');
+  if (hint) hint.innerText = total > 0
+    ? `~${bpe} batches/epoch = ${Math.ceil(ep*bpe)} total batches`
+    : 'Waiting for training data...';
+}
+
+function myAugment(tensor) {
+  return tf.tidy(() => {
+    let a = tensor;
+    if (Math.random() > 0.5) a = a.add((Math.random()-0.5)*0.2).clipByValue(0,1);
+    if (Math.random() > 0.5) {
+      const c = 0.8 + Math.random()*0.4;
+      const m = a.mean();
+      a = a.sub(m).mul(c).add(m).clipByValue(0,1);
+    }
+    return a;
+  });
+}
+
+function myGetLabels() {
+  const labels = [];
+  for (let i = 0; i < myNumClasses; i++) {
+    const el = document.getElementById('myLabel' + i);
+    labels.push(el ? el.value || ('Class' + i) : ('Class' + i));
+  }
+  return labels;
+}
+
+// ─────────────────────────────────────────────────────────
+// DYNAMIC CLASS ROWS — build/rebuild the capture UI
+// ─────────────────────────────────────────────────────────
+function myRenderClassRows() {
+  const container = document.getElementById('myClassRows');
+  if (!container) return;
+  // Default label names — extend if we have more than 3
+  const defaults = ['0Blank','1Cup','2Pen','3Class','4Class','5Class','6Class','7Class'];
+  // Preserve any labels the user has already typed
+  const existing = [];
+  for (let i = 0; i < 20; i++) {
+    const el = document.getElementById('myLabel' + i);
+    existing[i] = el ? el.value : null;
+  }
+  let html = '';
+  for (let i = 0; i < myNumClasses; i++) {
+    const val = existing[i] !== null ? existing[i] : (defaults[i] || i + 'Class');
+    html += `<b>Class ${i}:</b> <input type="text" id="myLabel${i}" value="${val}" oninput="myRefreshConfigTextarea()">`;
+    html += `<div id="myCount${i}" style="display:inline; margin-left:8px;">0 samples</div>`;
+    html += `<span id="myDiskCount${i}" style="font-size:0.8em; color:#0055aa; margin-left:6px;"></span><br>`;
+    html += `<button onclick="myCollect(${i})">📷 Capture</button>`;
+    html += `<button onclick="myLoadImages(${i})">Load from PC</button>`;
+    html += `<button onclick="myLoadFromSd(${i})" title="Pull images from ESP32 SD /images/ClassName/">📂 Load from SD</button>`;
+    html += `<button onclick="myClearImages(${i})">Clear RAM</button>`;
+    html += `<br><br>`;
+  }
+  container.innerHTML = html;
+  // Re-attach input listeners for config textarea sync
+  for (let i = 0; i < myNumClasses; i++) {
+    const el = document.getElementById('myLabel' + i);
+    if (el) el.addEventListener('input', myRefreshConfigTextarea);
+  }
+  myUpdateFolderStatus();
+}
+
+// Called when the user changes the class-count selector
+function myOnNumClassesChange(val) {
+  const n = parseInt(val);
+  if (isNaN(n) || n < 2 || n > 8) return;
+  if (myModel) {
+    alert('Cannot change class count after the model has been built.\nRefresh the page to start over.');
+    // Reset the selector to the current value
+    document.getElementById('myNumClassesSelect').value = String(myNumClasses);
+    return;
+  }
+  myNumClasses = n;
+  myReinitClassData(n);
+  myRenderClassRows();
+  myRefreshConfigTextarea();
+  myLog('Class count changed to ' + n + ' — image buffers reset');
+}
+
+// ─────────────────────────────────────────────────────────
+// LOAD config.json FROM PC FILE — sets classes, labels, and
+// all other fields exactly like mySdApplyConfig() does.
+// ─────────────────────────────────────────────────────────
+function myLoadConfigJsonFromPC() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const cfg = JSON.parse(text);
+      myApplyConfigObj(cfg);
+      myLog('✓ config.json loaded from PC — labels: [' + myGetLabels().join(', ') + ']');
+    } catch(err) {
+      myLog('ERROR: Could not parse config.json — ' + err.message);
+      alert('Could not parse config.json:\n' + err.message);
+    }
+  };
+  input.click();
+}
+
+// ─────────────────────────────────────────────────────────
+// APPLY CONFIG OBJECT — shared by PC file load and SD load
+// ─────────────────────────────────────────────────────────
+function myApplyConfigObj(cfg) {
+  // Numeric / string fields → form inputs
+  if (cfg.learningRate     !== undefined) document.getElementById('myLearningRate').value     = cfg.learningRate;
+  if (cfg.batchSize        !== undefined) document.getElementById('myBatchSize').value         = cfg.batchSize;
+  if (cfg.targetEpochs     !== undefined) document.getElementById('myTargetEpochs').value      = cfg.targetEpochs;
+  if (cfg.version          !== undefined) document.getElementById('myBinVersion').value        = cfg.version;
+  if (cfg.validationImages !== undefined) document.getElementById('myExportValidationImages').value = cfg.validationImages;
+
+  // Checkboxes
+  if (cfg.useAugmentation !== undefined) document.getElementById('myExportAugmentation').checked  = !!cfg.useAugmentation;
+  if (cfg.useGrayscale    !== undefined) document.getElementById('myExportGrayscale').checked      = !!cfg.useGrayscale;
+  if (cfg.imagesToPsram   !== undefined) document.getElementById('myExportImagesToPsram').checked  = !!cfg.imagesToPsram;
+
+  // inputSize → myInputSize (only safe to change if model not yet built)
+  if (cfg.inputSize !== undefined) {
+    if (!myModel) {
+      myInputSize = parseInt(cfg.inputSize) || myInputSize;
+      const sel = document.getElementById('myResolutionSelect');
+      const match = Array.from(sel.options).find(o => o.value === String(myInputSize));
+      if (match) { sel.value = myInputSize; }
+      else { sel.value = 'custom'; document.getElementById('myResolutionCustom').value = myInputSize; document.getElementById('myResolutionCustom').style.display = 'inline-block'; }
+      myUpdateResolutionHint();
+    } else {
+      myLog('Note: inputSize in config (' + cfg.inputSize + ') ignored — model already built at ' + myInputSize);
+    }
+  }
+
+  // Class count + labels — the key part
+  const newN = parseInt(cfg.numLabels || cfg.numClasses) || myNumClasses;
+  if (newN !== myNumClasses) {
+    if (myModel) {
+      myLog('Note: numLabels=' + newN + ' in config ignored — model already built with ' + myNumClasses + ' classes');
+    } else {
+      myNumClasses = newN;
+      myReinitClassData(newN);
+      // Sync the selector (clamp to available options 2-8)
+      const sel = document.getElementById('myNumClassesSelect');
+      if (sel) sel.value = String(Math.min(8, Math.max(2, newN)));
+    }
+  }
+
+  // Apply label names (render rows first so the inputs exist)
+  myRenderClassRows();
+  if (Array.isArray(cfg.classLabels)) {
+    for (let i = 0; i < Math.min(cfg.classLabels.length, myNumClasses); i++) {
+      const el = document.getElementById('myLabel' + i);
+      if (el && cfg.classLabels[i]) el.value = cfg.classLabels[i];
+    }
+  }
+
+  myRefreshConfigTextarea();
+}
+
+function toCString(s) {
+  return s.substring(0,20).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,'\\n');
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 4 — WEBSERIAL (ESP32 COMMUNICATION)
+     Handles connect/disconnect, send, receive, SD browser commands,
+     and both single-frame and continuous streaming from ESP32 camera.
+     ─────────────────────────────────────────────────────────────────
+     Protocol (esp_all_menu_image_train_infer68):
+       Single frame  → send 'f', ESP32 replies FRAME_B64:<b64>\n
+       CAM stream    → send CAM_STREAM\n, ESP32 sends CAM_JPEG_START /
+                        CAM_JPEG:<chunk>\n / CAM_JPEG_END loop
+       SD list       → SD_LIST:/path\n → SD_LIST_START / SD_FILE:name,size,D|F / SD_LIST_END
+       SD read text  → SD_READ:/path\n → SD_CONTENT_START / SD_LINE:... / SD_CONTENT_END
+       SD read JPEG  → SD_JPEG:/path\n → SD_JPEG_START / SD_JPEG:<b64>\n / SD_JPEG_END
+       SD delete     → SD_DELETE:/path\n  or  SD_RMDIR:/path\n
+       SD write      → SD_WRITE:/path:content\n
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// WEBSERIAL — LOGGING
+// ─────────────────────────────────────────────────────────
+function mySerialLog(msg) {
+  const box = document.getElementById('mySerialLog');
+  const t = new Date().toLocaleTimeString();
+  box.textContent += `[${t}] ${msg}\n`;
+  if (document.getElementById('mySerialAutoScroll').checked)
+    box.scrollTop = box.scrollHeight;
+}
+
+// ─────────────────────────────────────────────────────────
+// WEBSERIAL — CONNECT / DISCONNECT
+// ─────────────────────────────────────────────────────────
+function mySetSerialStatus(connected) {
+  mySerialConnected = connected;
+  const el = document.getElementById('mySerialStatus');
+  if (connected) {
+    el.textContent = '✓ Connected';
+    el.style.color = 'green';
+    // Add ESP32 camera as first option and select it.
+    // Webcam options already in list (populated at init + re-enumerated after permission).
+    // User can switch back to webcam anytime via the dropdown.
+    const sel = document.getElementById('myCameraSelect');
+    if (!document.getElementById('opt-esp32-serial')) {
+      const opt = document.createElement('option');
+      opt.id = 'opt-esp32-serial';
+      opt.value = '__esp32serial__';
+      opt.text = 'ESP32 Camera (WebSerial)';
+      sel.insertBefore(opt, sel.firstChild);
+    }
+    sel.value = '__esp32serial__';
+    myOnCameraSourceChange();
+  } else {
+    el.textContent = 'Not Connected';
+    el.style.color = '';
+    const opt = document.getElementById('opt-esp32-serial');
+    if (opt) opt.remove();
+    myStopEspStream();
+    document.getElementById('myEspStreamControls').style.display = 'none';
+  }
+}
+
+async function myConnectSerial() {
+  if (!('serial' in navigator)) {
+    alert('WebSerial not supported. Please use Chrome or Edge on a desktop.');
+    return;
+  }
+  try {
+    mySerialPort = await navigator.serial.requestPort();
+    await mySerialPort.open({ baudRate: 115200 });
+    mySetSerialStatus(true);
+    myLog('ESP32 Serial connected');
+    mySerialLog('=== Connected at 115200 baud ===');
+
+    const textDecoder = new TextDecoderStream();
+    mySerialPort.readable.pipeTo(textDecoder.writable);
+    mySerialReader = textDecoder.readable.getReader();
+
+    mySerialReadLoop = (async () => {
+      try {
+        while (true) {
+          const { value, done } = await mySerialReader.read();
+          if (done) break;
+          if (value) myHandleSerialData(value);
+        }
+      } catch (e) {
+        if (mySerialConnected) myLog('Serial read error: ' + e.message);
+      }
+    })();
+
+    const textEncoder = new TextEncoderStream();
+    textEncoder.readable.pipeTo(mySerialPort.writable);
+    mySerialWriter = textEncoder.writable.getWriter();
+
+  } catch (e) {
+    myLog('Serial connect failed: ' + e.message);
+  }
+}
+
+async function myDisconnectSerial() {
+  myStopEspStream();
+  try {
+    if (mySerialReader) { await mySerialReader.cancel(); mySerialReader = null; }
+    if (mySerialWriter) { await mySerialWriter.close(); mySerialWriter = null; }
+    if (mySerialPort) { await mySerialPort.close(); mySerialPort = null; }
+  } catch(e) {}
+  mySetSerialStatus(false);
+  myLog('ESP32 Serial disconnected');
+}
+
+// ─────────────────────────────────────────────────────────
+// WEBSERIAL — SEND
+// ─────────────────────────────────────────────────────────
+async function mySendSerialChar(c) {
+  if (!mySerialWriter) { myLog('Not connected to ESP32'); return; }
+  try {
+    // Always send with \n so the ESP32 line-buffer parser dispatches it immediately
+    await mySerialWriter.write(c + '\n');
+    mySerialLog(`→ "${c}"`);
+  } catch(e) { myLog('Serial write error: ' + e.message); }
+}
+
+async function mySendSerialLine() {
+  const cmd = document.getElementById('mySerialCmd').value.trim();
+  if (!cmd || !mySerialWriter) return;
+  try {
+    await mySerialWriter.write(cmd + '\n');
+    mySerialLog(`→ ${cmd}`);
+    document.getElementById('mySerialCmd').value = '';
+  } catch(e) { myLog('Serial write error: ' + e.message); }
+}
+
+async function myWriteSerial(data) {
+  if (!mySerialWriter) return;
+  try { await mySerialWriter.write(data); } catch(e) {}
+}
+
+// ─────────────────────────────────────────────────────────
+// WEBSERIAL — RECEIVE & PARSE
+// Handles both old FRAME_B64 single-line and new
+// CAM_JPEG_START / CAM_JPEG:<chunk> / CAM_JPEG_END protocol.
+// Also handles SD_LIST, SD_CONTENT, SD_JPEG responses.
+// ─────────────────────────────────────────────────────────
+function myHandleSerialData(chunk) {
+  mySerialBuffer += chunk;
+  const lines = mySerialBuffer.split('\n');
+  mySerialBuffer = lines.pop();
+
+  for (const line of lines) {
+    const l = line.trim();
+    if (!l) continue;
+
+    // ── Old single-line FRAME_B64 (esp_all_menu_image_train_infer68.ino WebStream) ──
+    if (l.startsWith('FRAME_B64:')) {
+      myDecodeEspFrame(l.substring(10).trim());
+      continue;
+    }
+
+    // ── New multi-line CAM_JPEG protocol (esp_all_menu_image_train_infer68) ──
+    if (l === 'CAM_JPEG_START') {
+      myEspReceivingCam = true; myEspCamChunks = [];
+      continue;
+    }
+    if (l.startsWith('CAM_JPEG:') && myEspReceivingCam) {
+      myEspCamChunks.push(l.substring(9));
+      continue;
+    }
+    if (l === 'CAM_JPEG_END' && myEspReceivingCam) {
+      myEspReceivingCam = false;
+      const b64 = myEspCamChunks.join('');
+      myEspCamChunks = [];
+      myDecodeEspFrame(b64);
+      // If streaming, schedule next frame
+      if (myEspStreaming) {
+        const interval = parseInt(document.getElementById('myEspStreamInterval').value) || 800;
+        myEspStreamTimer = setTimeout(myRequestEspFrame, interval);
+      }
+      continue;
+    }
+
+    // ── SD List ──
+    if (l === 'SD_LIST_START') { mySdCollectList = true; mySdEntries = []; continue; }
+    if (l.startsWith('SD_FILE:') && mySdCollectList) {
+      const p = l.substring(8).split(',');
+      const name = p[0]?.trim();
+      const isDir = p[2]?.trim() === 'D';
+      if (name) {
+        if (mySdLoadClassId >= 0) {
+          // Class load mode — collect only JPEG files into the queue
+          if (!isDir && /\.(jpg|jpeg)$/i.test(name)) {
+            const path = (mySdLoadCwd + '/' + name).replace('//', '/');
+            mySdLoadQueue.push(path);
+          }
+        } else {
+          mySdEntries.push({name, size: p[1]?.trim()||'0', isDir});
+        }
+      }
+      continue;
+    }
+    if (l.startsWith('SD_LIST_END') && mySdCollectList) {
+      mySdCollectList = false;
+      if (mySdLoadClassId >= 0) {
+        // We're loading images for a class — start pulling them one by one
+        mySdPumpLoadQueue();
+      } else {
+        mySdRenderList();
+      }
+      continue;
+    }
+
+    // ── SD Text content ──
+    if (l === 'SD_CONTENT_START') { mySdCollectContent = true; mySdContentLines = []; continue; }
+    if (l.startsWith('SD_LINE:') && mySdCollectContent) { mySdContentLines.push(l.substring(8)); continue; }
+    if (l === 'SD_CONTENT_END' && mySdCollectContent) {
+      mySdCollectContent = false;
+      if (myBinLoadActive) {
+        myApplyWeightsBin(mySdContentLines);
+      } else if (mySdReadingConfig) {
+        mySdReadingConfig = false;
+        mySdApplyConfig(mySdContentLines.join('\n'));
+      } else {
+        mySdShowText(mySdContentLines.join('\n'));
+      }
+      continue;
+    }
+
+    // ── SD JPEG (file viewer) ──
+    if (l === 'SD_JPEG_START') { mySdCollectJpeg = true; mySdJpegChunks = []; continue; }
+    if (l.startsWith('SD_JPEG:') && mySdCollectJpeg) { mySdJpegChunks.push(l.substring(8)); continue; }
+    if (l === 'SD_JPEG_END' && mySdCollectJpeg) {
+      mySdCollectJpeg = false;
+      const b64 = mySdJpegChunks.join('');
+      mySdJpegChunks = [];
+      if (mySdLoadOnJpegDone) {
+        // Load-for-class mode — hand off to the loader, don't show in viewer
+        const cb = mySdLoadOnJpegDone;
+        mySdLoadOnJpegDone = null;
+        cb(b64);
+      } else {
+        mySdShowJpeg(b64);
+      }
+      continue;
+    }
+
+    // ── v66: Conv2 heatmap from ESP32 inference ──
+    // Format: HEATMAP:<rows>x<cols>:<base64-bytes>
+    if (l.startsWith('HEATMAP:')) {
+      const rest = l.substring(8);           // "<rows>x<cols>:<base64>"
+      const dimSep = rest.indexOf(':');
+      if (dimSep > 0) {
+        const dimStr = rest.substring(0, dimSep);   // e.g. "27x27"
+        const b64    = rest.substring(dimSep + 1);
+        const dims   = dimStr.split('x');
+        const rows   = parseInt(dims[0]) || 0;
+        const cols   = parseInt(dims[1]) || 0;
+        if (rows > 0 && cols > 0 && b64.length > 0) {
+          myRenderHeatmap(rows, cols, b64);
+        }
+      }
+      continue;
+    }
+
+    // ── Log everything else ──
+    // Surface important OK and ERR responses to the main activity log, not just serial log
+    if (l.startsWith('OK:JPEG_WRITE_READY')) {
+      // Handshake: ESP32 opened the file and is ready for SD_JPEG_CHUNK lines
+      myLog('✓ SD ready for chunks: ' + l.substring(20).trim());
+      mySerialLog(l);
+      continue;
+    }
+    if (l.startsWith('OK:JPEG_WRITE_DONE')) {
+      // e.g. "OK:JPEG_WRITE_DONE /header/myWeights.bin (12345b)"
+      myLog('✓ SD write complete: ' + l.substring(19).trim());
+      mySerialLog(l);
+      continue;
+    }
+    if (l.startsWith('OK:Written')) {
+      // Confirmation from SD_TEXT_WRITE_END — e.g. "OK:Written 1234B to /header/config.json"
+      myLog('✓ ' + l);
+      mySerialLog(l);
+      continue;
+    }
+    // SD_TEXT_WRITE_START acknowledgement — ESP32 has opened the file and is ready for chunks
+    if (l.startsWith('OK:TEXT_WRITE_READY')) {
+      mySerialLog('✓ ' + l);  // serial log only — not noisy in activity log
+      continue;
+    }
+    // SD_MKDIR response — always surface so we know if /header/ creation succeeded
+    if (l.startsWith('OK:MKDIR') || l.startsWith('OK:DIR_EXISTS')) {
+      myLog('✓ ' + l);
+      mySerialLog(l);
+      continue;
+    }
+    // ERR responses — always surface to main log so failures are visible
+    if (l.startsWith('ERR:')) {
+      myLog('✗ ESP32 error: ' + l);
+      mySerialLog(l);
+      continue;
+    }
+    mySerialLog(l);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// ESP32 CAMERA — decode a base64 JPEG frame
+// Updates the preview <img> and stores as ImageData for capture
+// ─────────────────────────────────────────────────────────
+function myDecodeEspFrame(b64) {
+  if (!b64) return;
+  myEspLastB64 = b64;
+  const img = document.getElementById('myEspImg');
+  img.onload = () => {
+    // Store as 240x240 ImageData for training capture
+    const tmp = document.createElement('canvas'); tmp.width = 240; tmp.height = 240;
+    const tc = tmp.getContext('2d');
+    tc.drawImage(img, 0, 0, 240, 240);
+    myEspLastFrame = tc.getImageData(0, 0, 240, 240);
+    mySerialLog('Frame received');
+  };
+  img.src = 'data:image/jpeg;base64,' + b64;
+}
+
+// ─────────────────────────────────────────────────────────
+// ESP32 CAMERA — request / stream controls
+// ─────────────────────────────────────────────────────────
+async function myRequestEspFrame() {
+  if (!mySerialWriter) { myLog('Not connected to ESP32'); return; }
+  // Request 240x240 JPEG at quality 12 — matches training resolution
+  await myWriteSerial('CAM_CAPTURE:240X240:12\n');
+  mySerialLog('→ CAM_CAPTURE:240X240:12');
+}
+
+function myToggleEspStream() {
+  const btn = document.getElementById('myEspStreamBtn');
+  if (myEspStreaming) {
+    myStopEspStream();
+    if (mySerialWriter) myWriteSerial('CAM_STREAM_STOP\n');
+    btn.textContent = '▶ Start Stream';
+    myLog('ESP32 stream stopped');
+  } else {
+    myEspStreaming = true;
+    btn.textContent = '⏹ Stop Stream';
+    myLog('ESP32 stream started (240x240)');
+    myRequestEspFrame();   // kick off first frame
+  }
+}
+
+function myStopEspStream() {
+  myEspStreaming = false;
+  if (myEspStreamTimer) { clearTimeout(myEspStreamTimer); myEspStreamTimer = null; }
+  const btn = document.getElementById('myEspStreamBtn');
+  if (btn) btn.textContent = '▶ Start Stream';
+}
+
+async function myAddEspFrameToClass() {
+  if (!myEspLastFrame) { myLog('No ESP32 frame available yet'); return; }
+  if (!myModel) { myLog('Start Camera & Brain first to initialise the model before adding ESP32 frames'); }
+
+  const cls = parseInt(document.getElementById('myEspCaptureClass').value);
+  const label = myGetLabels()[cls];
+
+  // ── Save to SD card if WebSerial connected ──────────────────────────────
+  if (mySerialWriter && myEspLastB64) {
+    const ts = Date.now();
+    const sdPath = '/images/' + label + '/img_' + ts + '.jpg';
+    const b64 = myEspLastB64;
+    const CHUNK = 48;  // small chunks to prevent ESP32 serial buffer overflow
+    // Decode b64 length to get original byte count (approximate)
+    const byteCount = Math.floor(b64.length * 3 / 4);
+    await myWriteSerial('SD_JPEG_WRITE_START:' + sdPath + ':' + byteCount + '\n');
+    for (let pos = 0; pos < b64.length; pos += CHUNK) {
+      await myWriteSerial('SD_JPEG_CHUNK:' + b64.substring(pos, pos + CHUNK) + '\n');
+      if ((pos / CHUNK) % 20 === 19) await new Promise(r => setTimeout(r, 10));
+    }
+    await myWriteSerial('SD_JPEG_WRITE_END\n');
+    mySerialLog('→ Saved frame to SD: ' + sdPath);
+    myLog('Frame saved to SD: ' + sdPath);
+  }
+
+  // ── Add to browser training buffer ─────────────────────────────────────
+  if (myRawData[cls].length >= myMaxBuffer) myRawData[cls].shift();
+  myRawData[cls].push(myEspLastFrame);
+
+  const tmp = document.createElement('canvas'); tmp.width = 240; tmp.height = 240;
+  const tc = tmp.getContext('2d');
+  tc.putImageData(myEspLastFrame, 0, 0);
+
+  let tensor = myResizeTensor(tf.browser.fromPixels(tmp), myInputSize);
+  if (myIsGrayscaleMode) {
+    const old = tensor;
+    tensor = tf.tidy(() => {
+      const r = old.slice([0,0,0],[myInputSize,myInputSize,1]);
+      const g = old.slice([0,0,1],[myInputSize,myInputSize,1]);
+      const b = old.slice([0,0,2],[myInputSize,myInputSize,1]);
+      return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+    });
+    old.dispose();
+  }
+  const old2 = tensor;
+  tensor = tensor.div(255.0).expandDims(0);
+  old2.dispose();
+
+  if (myTrainData[cls].length < myMaxBuffer) {
+    myTrainData[cls].push(tensor);
+  } else {
+    myTrainData[cls][0].dispose(); myTrainData[cls].shift();
+    myTrainData[cls].push(tensor);
+  }
+  document.getElementById('myCount'+cls).innerHTML = `${myTrainData[cls].length} samples`;
+  myLog(`ESP32 frame added to Class ${cls} (${document.getElementById('myLabel'+cls).value}), total: ${myTrainData[cls].length}`);
+  myUpdateEpochHint();
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 4b — v66 CONV2 HEATMAP
+     Renders conv2 activation heatmap sent by ESP32 firmware v66.
+     Protocol: HEATMAP:<rows>x<cols>:<base64-bytes>\n
+     Each byte = max activation across all Conv2 filters at that
+     spatial position, normalised 0–255 by the firmware.
+     Colourmap: blue (0) → cyan → green → yellow → red (255).
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// HEATMAP — colour mapping (blue→cyan→green→yellow→red)
+// ─────────────────────────────────────────────────────────
+function myHeatmapColour(v) {
+  // v in [0,255] → [r, g, b]
+  const t = v / 255;
+  let r, g, b;
+  if (t < 0.25) {
+    // blue → cyan
+    r = 0; g = Math.round(t * 4 * 255); b = 255;
+  } else if (t < 0.5) {
+    // cyan → green
+    r = 0; g = 255; b = Math.round((1 - (t - 0.25) * 4) * 255);
+  } else if (t < 0.75) {
+    // green → yellow
+    r = Math.round((t - 0.5) * 4 * 255); g = 255; b = 0;
+  } else {
+    // yellow → red
+    r = 255; g = Math.round((1 - (t - 0.75) * 4) * 255); b = 0;
+  }
+  return [r, g, b];
+}
+
+// ─────────────────────────────────────────────────────────
+// HEATMAP — render received data to canvas
+// ─────────────────────────────────────────────────────────
+function myRenderHeatmap(rows, cols, b64) {
+  // Decode base64 → Uint8Array
+  let binary;
+  try { binary = atob(b64); }
+  catch(e) { mySerialLog('[heatmap] base64 decode error: ' + e.message); return; }
+
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  if (bytes.length !== rows * cols) {
+    mySerialLog(`[heatmap] size mismatch: got ${bytes.length} bytes, expected ${rows*cols}`);
+    return;
+  }
+
+  // Show the panel now that we have real data
+  const panel = document.getElementById('myHeatmapPanel');
+  panel.style.display = 'block';
+  document.getElementById('myHeatmapDims').textContent = `${rows}×${cols}`;
+
+  const canvas = document.getElementById('myHeatmapCanvas');
+  // Scale canvas display to 162px (6x for 27x27 default, fills nicely)
+  const scale = Math.max(1, Math.floor(162 / Math.max(rows, cols)));
+  canvas.width  = cols * scale;
+  canvas.height = rows * scale;
+  canvas.style.width  = (cols * scale) + 'px';
+  canvas.style.height = (rows * scale) + 'px';
+
+  const ctx = canvas.getContext('2d');
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const v = bytes[r * cols + c];
+      const [R, G, B] = myHeatmapColour(v);
+      ctx.fillStyle = `rgb(${R},${G},${B})`;
+      ctx.fillRect(c * scale, r * scale, scale, scale);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// BROWSER HEATMAP — extract Conv2 activations from TFJS model
+//
+// Root cause of v116 failure: tf.sequential() layers do not expose
+// a .output symbolic tensor on intermediate layers, so tf.model()
+// with inputs/outputs from a sequential layer throws silently.
+//
+// Fix: run the input forward through layers manually up to and
+// including the second leakyReLU (index 4 in the fixed layer order:
+//   0 conv2d  1 leakyReLU  2 maxPool  3 conv2d  4 leakyReLU  5 flatten ...
+// We store the target layer index once at build time, then call
+// layer.apply() in a tf.tidy() each tick — no sub-model needed.
+//
+// myHeatmapModel is repurposed as a simple integer (target layer index)
+// rather than a tf.Model object, avoiding the sequential/.output issue.
+// ─────────────────────────────────────────────────────────
+function myEnsureHeatmapModel() {
+  if (myHeatmapModel !== null) return;   // already set (0 is valid)
+  if (!myModel) return;
+
+  // Walk layers to find the index of the leakyReLU immediately after
+  // the second conv2d.  Log each layer so debugging is easy.
+  let conv2dCount = 0;
+  let targetIdx = -1;
+  const names = myModel.layers.map((l,i) => `${i}:${l.getClassName()}`);
+  myLog('[heatmap] Model layers: ' + names.join('  '));
+
+  for (let i = 0; i < myModel.layers.length; i++) {
+    const cls = myModel.layers[i].getClassName();
+    if (cls === 'Conv2D') {
+      conv2dCount++;
+      if (conv2dCount === 2) {
+        // Take the very next layer (leakyReLU after conv2d #2)
+        targetIdx = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (targetIdx < 0 || targetIdx >= myModel.layers.length) {
+    myLog('[heatmap] ERROR: could not find Conv2 leakyReLU layer — layer list logged above');
+    myHeatmapModel = -1;   // sentinel: don't retry
+    return;
+  }
+
+  myHeatmapModel = targetIdx;   // store as integer index
+  myLog(`[heatmap] Browser heatmap ready — will tap layer ${targetIdx}: ${myModel.layers[targetIdx].getClassName()}`);
+}
+
+// Called each inference tick when myBrowserHeatmap is true.
+// inputTensor: the already-prepared [1,H,W,C] float32 tensor.
+// Caller keeps ownership — we do NOT dispose it here.
+async function myExtractAndRenderBrowserHeatmap(inputTensor) {
+  if (myHeatmapModel === null) myEnsureHeatmapModel();
+  if (myHeatmapModel === null || myHeatmapModel < 0) return;
+
+  let activation = null;
+  let maxAct = null;
+  try {
+    // Forward through layers 0..targetIdx manually using apply()
+    // Each intermediate tensor is disposed after the next layer consumes it,
+    // except the final activation which we read then dispose ourselves.
+    activation = tf.tidy(() => {
+      let x = inputTensor;
+      for (let i = 0; i <= myHeatmapModel; i++) {
+        x = myModel.layers[i].apply(x);
+      }
+      return x;   // [1, rows, cols, filters]
+    });
+
+    const shape = activation.shape;   // [1, rows, cols, filters]
+    const rows = shape[1], cols = shape[2];
+
+    // Max across filters → [rows, cols], then read
+    maxAct = tf.tidy(() => activation.squeeze([0]).max(-1));
+    const raw = await maxAct.data();
+    activation.dispose(); activation = null;
+    maxAct.dispose();     maxAct = null;
+
+    // Normalise raw floats to 0-255
+    let mn = Infinity, mx = -Infinity;
+    for (const v of raw) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    const range = mx - mn || 1;
+    const bytes = new Uint8Array(rows * cols);
+    for (let i = 0; i < bytes.length; i++)
+      bytes[i] = Math.round((raw[i] - mn) / range * 255);
+
+    // Encode as base64 to reuse the existing myRenderHeatmap() path
+    let binStr = '';
+    for (let i = 0; i < bytes.length; i++) binStr += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binStr);
+
+    document.getElementById('myHeatmapSource').textContent = '(browser)';
+    myRenderHeatmap(rows, cols, b64);
+
+  } catch(e) {
+    // Log errors so they are visible — the silent catch was hiding the original failure
+    myLog('[heatmap] extraction error: ' + e.message);
+    if (activation) { try { activation.dispose(); } catch(_) {} }
+    if (maxAct)     { try { maxAct.dispose();     } catch(_) {} }
+  }
+}
+
+// Toggle browser-side heatmap on/off
+function myToggleBrowserHeatmap() {
+  if (!myModel) { myLog('Start Camera & Brain first to build the model'); return; }
+  const btn = document.getElementById('myBrowserHeatmapBtn');
+  myBrowserHeatmap = !myBrowserHeatmap;
+  if (myBrowserHeatmap) {
+    myHeatmapModel = null;   // reset so myEnsureHeatmapModel() runs fresh
+    myEnsureHeatmapModel();
+    btn.textContent = '⏹ Browser Heatmap';
+    document.getElementById('myHeatmapPanel').style.display = 'block';
+    document.getElementById('myHeatmapSource').textContent = '(browser)';
+    myLog('Browser heatmap ON — Conv2 activations extracted each inference tick');
+  } else {
+    btn.textContent = '▶ Browser Heatmap';
+    myHeatmapModel = null;   // clear; will re-detect on next enable
+    myLog('Browser heatmap OFF');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// HEATMAP — live toggle
+// ─────────────────────────────────────────────────────────
+function myToggleHeatmapLive() {
+  if (!mySerialWriter) { myLog('Not connected to ESP32'); return; }
+  const btn = document.getElementById('myHeatmapLiveBtn');
+  if (myHeatmapLive) {
+    // Turn off heatmap — re-enable inference
+    myHeatmapLive = false;
+    myHeatmapPending = false;
+    myWriteSerial('HEATMAP_OFF\n');
+    mySerialLog('→ HEATMAP_OFF');
+    btn.textContent = '▶ Live Heatmap';
+    // Restart inference if we paused it
+    if (myAnalysisStopped) {
+      myAnalysisStopped = false;
+      document.getElementById('myStopAnalysisBtn').style.display = 'block';
+      document.getElementById('myStartAnalysisBtn').style.display = 'none';
+      myLog('Heatmap live mode off — inference restarted');
+    } else {
+      myLog('Heatmap live mode off — ESP32 FPS restored');
+    }
+  } else {
+    // Pause inference first so heatmap and inference loop don't race on the serial port
+    const wasRunning = !myAnalysisStopped && !!myTimer;
+    if (wasRunning) {
+      myAnalysisStopped = true;
+      document.getElementById('myStopAnalysisBtn').style.display = 'none';
+      document.getElementById('myStartAnalysisBtn').style.display = 'block';
+    }
+    // Turn on heatmap
+    myHeatmapLive = true;
+    myHeatmapPending = false;
+    myWriteSerial('HEATMAP_ON\n');
+    mySerialLog('→ HEATMAP_ON (live)');
+    btn.textContent = '⏹ Stop Live Heatmap';
+    myLog('Heatmap live mode on — inference paused, FPS slightly reduced (~0.2s)');
+  }
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 5 — SD BROWSER
+     Sends SD_LIST / SD_READ / SD_JPEG / SD_DELETE / SD_RMDIR / SD_WRITE
+     commands over WebSerial and renders the results in the SD panel.
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// SD BROWSER — NAVIGATION
+// ─────────────────────────────────────────────────────────
+function mySdRefresh() {
+  if (!mySerialWriter) { mySerialLog('Not connected — cannot browse SD'); return; }
+  myWriteSerial('SD_LIST:' + mySdCwd + '\n');
+}
+
+function mySdNavigate(path) {
+  mySdCwd = path;
+  if (!mySdCwd.endsWith('/')) mySdCwd += '/';
+  if (mySdCwd === '//') mySdCwd = '/';
+  mySdUpdateBreadcrumb();
+  mySdRefresh();
+}
+
+function mySdGoUp() {
+  if (mySdCwd === '/') return;
+  const parts = mySdCwd.replace(/\/$/, '').split('/');
+  parts.pop();
+  mySdNavigate(parts.join('/') || '/');
+}
+
+function mySdUpdateBreadcrumb() {
+  const bc = document.getElementById('mySdBreadcrumb');
+  const parts = mySdCwd.replace(/^\/|\/$/g,'').split('/').filter(Boolean);
+  let html = `<span class="mySdBcItem" onclick="mySdNavigate('/')">/ (root)</span>`;
+  let path = '';
+  for (const p of parts) {
+    path += '/' + p;
+    const cp = path;
+    html += ` › <span class="mySdBcItem" onclick="mySdNavigate('${cp}')">${p}</span>`;
+  }
+  bc.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────
+// SD BROWSER — RENDER LIST
+// ─────────────────────────────────────────────────────────
+function mySdFmtSize(bytes) {
+  const b = parseInt(bytes) || 0;
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+function mySdRenderList() {
+  const el = document.getElementById('mySdList');
+  if (!mySdEntries.length) {
+    el.innerHTML = '<div style="padding:12px;color:#888;">— empty directory —</div>';
+    return;
+  }
+  const sorted = [...mySdEntries].sort((a,b) => {
+    if (a.isDir && !b.isDir) return -1;
+    if (!a.isDir && b.isDir) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  el.innerHTML = sorted.map(e => {
+    const isImg = /\.(jpg|jpeg)$/i.test(e.name);
+    const isJson = /\.json$/i.test(e.name);
+    const isBin = /\.bin$/i.test(e.name);
+    const icon = e.isDir ? '📁' : isImg ? '🖼️' : isJson ? '{}' : isBin ? '⬡' : '📄';
+    const path = (mySdCwd + e.name).replace('//', '/');
+    const sz = e.isDir ? '' : mySdFmtSize(e.size);
+    const cls = 'mySdEntry' + (e.isDir ? ' mySdEntryDir' : '') + (mySdSelectedPath === path ? ' mySdSelected' : '');
+    return `<div class="${cls}" onclick="mySdClick('${path.replace(/'/g,"\\'")}',${e.isDir},event)">
+      <span>${icon}</span>
+      <span class="mySdName">${e.name}</span>
+      <span class="mySdSize">${sz}</span>
+    </div>`;
+  }).join('');
+}
+
+function mySdClick(path, isDir, event) {
+  // Deselect all, select clicked
+  mySdSelectedPath = path;
+  mySdSelectedIsDir = isDir;
+  document.querySelectorAll('.mySdEntry').forEach(e => e.classList.remove('mySdSelected'));
+  event.currentTarget.classList.add('mySdSelected');
+  document.getElementById('mySdDeleteBtn').style.display = 'inline-block';
+
+  if (isDir) {
+    if (event.detail === 2) mySdNavigate(path); // double-click enters folder
+    return;
+  }
+  // Open file
+  mySdOpenFile(path);
+}
+
+function mySdOpenFile(path) {
+  mySdContentFile = path;
+  const name = path.split('/').pop();
+  const viewer = document.getElementById('mySdViewer');
+  viewer.style.display = 'block';
+  document.getElementById('mySdViewerName').textContent = name;
+  document.getElementById('mySdViewerImg').style.display = 'none';
+  document.getElementById('mySdViewerText').style.display = 'none';
+  document.getElementById('mySdSaveTextBtn').style.display = 'none';
+  document.getElementById('mySdDownloadBtn').style.display = 'none';
+
+  if (/\.(jpg|jpeg)$/i.test(name)) {
+    myWriteSerial('SD_JPEG:' + path + '\n');
+  } else if (/\.(json|txt|csv|log|md|h|cpp|c|ini)$/i.test(name)) {
+    myWriteSerial('SD_READ:' + path + '\n');
+  } else if (/\.bin$/i.test(name)) {
+    // Binary file — show hex dump only, do NOT show Save button
+    // (the hex dump is display-only; writing it back would corrupt the binary)
+    myWriteSerial('SD_HEAD:' + path + '\n');
+    document.getElementById('mySdViewerText').style.display = 'block';
+    document.getElementById('mySdViewerText').value = '⚠ Binary file — hex preview only. Use "Export myWeights.bin to SD" button to write a new version.';
+    document.getElementById('mySdSaveTextBtn').style.display = 'none';  // explicitly block save
+    document.getElementById('mySdDownloadBtn').style.display = 'none';  // no meaningful PC download either
+  } else {
+    document.getElementById('mySdViewerText').style.display = 'block';
+    document.getElementById('mySdViewerText').value = 'Preview not available for this file type.';
+  }
+}
+
+function mySdShowJpeg(b64) {
+  const img = document.getElementById('mySdViewerImg');
+  img.src = 'data:image/jpeg;base64,' + b64;
+  img.style.display = 'block';
+  document.getElementById('mySdDownloadBtn').style.display = 'inline';
+  document.getElementById('mySdViewer').style.display = 'block';
+}
+
+function mySdShowText(content) {
+  const ta = document.getElementById('mySdViewerText');
+  ta.value = content;
+  ta.style.display = 'block';
+  // Only show Save button for editable text files — not for binary hex dumps
+  const isBin = mySdContentFile && /\.bin$/i.test(mySdContentFile);
+  document.getElementById('mySdSaveTextBtn').style.display = isBin ? 'none' : 'inline';
+  document.getElementById('mySdDownloadBtn').style.display = isBin ? 'none' : 'inline';
+  document.getElementById('mySdViewer').style.display = 'block';
+}
+
+// ─────────────────────────────────────────────────────────
+// SD CONFIG REFRESH
+// Read /header/config.json and update all webpage fields
+// ─────────────────────────────────────────────────────────
+function mySdReadConfig() {
+  if (!mySerialWriter) { mySerialLog('Not connected — cannot read SD config'); return; }
+  // Clear any stale flags that would mis-route the SD_CONTENT response
+  myBinLoadActive   = false;
+  mySdReadingConfig = true;
+  myWriteSerial('SD_READ:/header/config.json\n');
+  mySerialLog('→ SD_READ:/header/config.json');
+  myLog('Reading config.json from SD...');
+}
+
+function mySdApplyConfig(text) {
+  // text arrives as SD_LINE: joined lines — strip any leading "SD_LINE:" prefix
+  // that may have leaked through, then parse
+  const clean = text.replace(/^SD_LINE:/gm, '').trim();
+  let cfg;
+  try { cfg = JSON.parse(clean); }
+  catch(e) {
+    myLog('Failed to parse config.json from SD: ' + e.message);
+    myLog('Raw text received: ' + clean.substring(0, 200));
+    return;
+  }
+
+  myApplyConfigObj(cfg);
+
+  myLog('✓ Config synced from SD — labels: [' + myGetLabels().join(', ') + ']');
+  myLog('  version=' + cfg.version + ' | inputSize=' + cfg.inputSize +
+        ' | grayscale=' + cfg.useGrayscale + ' | LR=' + cfg.learningRate);
+}
+// ─────────────────────────────────────────────────────────
+async function mySdDeleteSelected() {
+  if (!mySdSelectedPath) return;
+  const name = mySdSelectedPath.split('/').pop();
+  if (!confirm(`Delete "${name}"?\nThis cannot be undone.`)) return;
+  if (mySdSelectedIsDir) {
+    await myWriteSerial('SD_RMDIR:' + mySdSelectedPath + '\n');
+    myLog('SD_RMDIR: ' + mySdSelectedPath);
+  } else {
+    await myWriteSerial('SD_DELETE:' + mySdSelectedPath + '\n');
+    myLog('SD_DELETE: ' + mySdSelectedPath);
+  }
+  document.getElementById('mySdDeleteBtn').style.display = 'none';
+  mySdSelectedPath = null;
+  setTimeout(mySdRefresh, 600);
+}
+
+// ─────────────────────────────────────────────────────────
+// SD BROWSER — SAVE TEXT FILE BACK TO SD
+// Uses the chunked text protocol (v70+): SD_TEXT_WRITE_START /
+// SD_TEXT_CHUNK / SD_TEXT_WRITE_END — no base64, no size limit.
+// ─────────────────────────────────────────────────────────
+async function mySdSaveTextFile() {
+  if (!mySdContentFile) return;
+  if (!mySerialWriter) { myLog('Not connected to ESP32 — connect WebSerial first'); return; }
+  const content = document.getElementById('mySdViewerText').value;
+  const sdPath = mySdContentFile;
+  // Ensure parent directory exists before writing
+  const parentDir = sdPath.substring(0, sdPath.lastIndexOf('/')) || '/';
+  if (parentDir !== '/') await myEnsureSdDir(parentDir);
+  await mySendTextChunked(sdPath, content, sdPath.split('/').pop());
+}
+
+// ─────────────────────────────────────────────────────────
+// SD BROWSER — ENSURE DIRECTORY EXISTS (SD_MKDIR)
+// Sends SD_MKDIR:/path to create a directory on the SD card
+// if it doesn't already exist. The firmware no-ops if the
+// dir is already present. Always await this before writing
+// files into subdirectories like /header/ that may be absent
+// on a freshly formatted card.
+// ─────────────────────────────────────────────────────────
+async function myEnsureSdDir(dirPath) {
+  if (!mySerialWriter) return;
+  await myWriteSerial('SD_MKDIR:' + dirPath + '\n');
+  mySerialLog('→ SD_MKDIR:' + dirPath + ' (ensure dir exists)');
+  // Give the ESP32 a moment to create the directory before we start writing
+  await new Promise(r => setTimeout(r, 150));
+}
+
+// ─────────────────────────────────────────────────────────
+// SD — SEND TEXT FILE VIA CHUNKED TEXT PROTOCOL (v70+)
+// Uses SD_TEXT_WRITE_START / SD_TEXT_CHUNK / SD_TEXT_WRITE_END.
+// This is the correct protocol for JSON, .h, and any other
+// plain-text file.  Binary files (.bin, .jpg) still use the
+// SD_JPEG_WRITE_START / SD_JPEG_CHUNK / SD_JPEG_WRITE_END path.
+//
+// content  : plain string to write (NOT base64)
+// sdPath   : destination path on SD card, e.g. '/header/config.json'
+// label    : short description for the activity log
+//
+// Newlines inside content are encoded as \n literals per chunk;
+// the ESP32 firmware unescapes them on receipt.
+// Chunk size 500 chars keeps each serial line safely under 512 bytes.
+// ─────────────────────────────────────────────────────────
+async function mySendTextChunked(sdPath, content, label) {
+  const CHUNK = 500;
+  const escaped = content.replace(/\n/g, '\\n');   // encode newlines for single-line transport
+  myLog(`Sending ${label} to SD ${sdPath} (${content.length} chars)...`);
+  mySerialLog(`→ SD_TEXT_WRITE_START:${sdPath}`);
+  await myWriteSerial(`SD_TEXT_WRITE_START:${sdPath}\n`);
+  // Brief pause for ESP32 to open the file and reply OK:TEXT_WRITE_READY
+  await new Promise(r => setTimeout(r, 80));
+  const total = escaped.length;
+  for (let pos = 0; pos < total; pos += CHUNK) {
+    await myWriteSerial(`SD_TEXT_CHUNK:${escaped.substring(pos, pos + CHUNK)}\n`);
+    // Yield every 10 chunks to avoid flooding the ESP32 serial buffer
+    if (((pos / CHUNK) + 1) % 10 === 0) await new Promise(r => setTimeout(r, 15));
+  }
+  await myWriteSerial('SD_TEXT_WRITE_END\n');
+  // ✓ confirmation arrives as OK:Written NB to /path in myHandleSerialData
+}
+
+// ─────────────────────────────────────────────────────────
+// SD BROWSER — DOWNLOAD FILE TO PC
+// ─────────────────────────────────────────────────────────
+function mySdDownloadFile() {
+  const name = (mySdContentFile || 'file').split('/').pop();
+  const img = document.getElementById('mySdViewerImg');
+  if (img.style.display !== 'none' && img.src && img.src.startsWith('data:image')) {
+    // Download JPEG — use the viewer's own src (not myEspLastB64 which may be a different frame)
+    const b64 = img.src.split(',')[1];
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {type:'image/jpeg'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    a.click();
+  } else {
+    // Download text
+    const content = document.getElementById('mySdViewerText').value;
+    const blob = new Blob([content], {type:'text/plain'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    a.click();
+  }
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 6 — CAMERA & TRAINING LOOP
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// Camera source change handler
+// Called when user changes the camera dropdown
+// ─────────────────────────────────────────────────────────
+function myOnCameraSourceChange() {
+  const sel = document.getElementById('myCameraSelect');
+  const isEsp = sel.value === '__esp32serial__';
+  document.getElementById('myEspStreamControls').style.display = isEsp ? 'block' : 'none';
+  document.getElementById('myEspOverlay').style.display = isEsp ? 'block' : 'none';
+  // Show/hide appropriate preview element
+  document.getElementById('myVideo1').style.display = isEsp ? 'none' : 'block';
+  document.getElementById('myCanvas1').style.display = 'none';
+  document.getElementById('myEspImg').style.display = isEsp ? 'block' : 'none';
+  if (!isEsp) myStopEspStream();
+}
+
+function myCheckGrayscaleChange() {
+  if (myModel) {
+    alert('Changing colour mode requires restarting.\nRefresh the page.');
+    document.getElementById('myGrayscaleToggle').checked = myIsGrayscaleMode;
+  } else if (document.getElementById('myGrayscaleToggle').checked) {
+    myLog('Grayscale mode enabled. Recommend: 20+ samples/class, 80-100 batches, LR 0.002-0.003');
+  }
+}
+
+function myStopAnalysis() {
+  myAnalysisStopped = true;
+  document.getElementById('myStopAnalysisBtn').style.display = 'none';
+  document.getElementById('myStartAnalysisBtn').style.display = 'block';
+  document.getElementById('myOutputDisplay').innerHTML = 'Analysis Stopped';
+  myLog('Analysis Stopped');
+}
+
+function myStartAnalysis() {
+  myAnalysisStopped = false;
+  document.getElementById('myStopAnalysisBtn').style.display = 'block';
+  document.getElementById('myStartAnalysisBtn').style.display = 'none';
+  document.getElementById('myOutputDisplay').innerHTML = 'Analyzing...';
+  myLog('Analysis Started');
+}
+
+function myStopCamera() {
+  const v = document.getElementById('myVideo1');
+  if (v.srcObject) { v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject = null; }
+  if (myGrayscaleRenderTimer) { clearInterval(myGrayscaleRenderTimer); myGrayscaleRenderTimer = null; }
+  myCameraStopped = true;
+  document.getElementById('myStartBtn').style.display = 'block';
+  document.getElementById('myStopCameraBtn').style.display = 'none';
+  myLog('Camera Stopped — training continues');
+}
+
+async function myStartAll() {
+  const myVideo  = document.getElementById('myVideo1');
+  const myCanvas = document.getElementById('myCanvas1');
+  const myCtx    = myCanvas.getContext('2d');
+  const sel      = document.getElementById('myCameraSelect');
+
+  if (sel.value === '__esp32serial__') {
+    if (!mySerialConnected) {
+      alert('Connect to ESP32 via WebSerial first (Section 2), then select the ESP32 camera.');
+      return;
+    }
+    myCameraStopped = false;
+    document.getElementById('myStartBtn').style.display   = 'none';
+    document.getElementById('myStopCameraBtn').style.display = 'block';
+    myLog('ESP32 camera mode — use Request Frame / Start Stream to preview and collect images');
+  } else if (myCameraStopped) {
+    // v116: camera was deliberately stopped — start training loop on buffered data only,
+    // do not try to reopen the camera stream.
+    myLog('Camera stopped — starting training loop on buffered data (no live inference)');
+    // Fall through to model build + timer start below without touching the video element
+  } else if (!myVideo.srcObject) {
+    myCameraStopped = false;
+    const deviceId = sel.value;
+    myVideo.srcObject = await navigator.mediaDevices.getUserMedia({
+      video: { width:240, height:240, deviceId: deviceId ? {exact:deviceId} : undefined }
+    });
+    // Re-enumerate cameras now that permission has been granted — labels become available
+    await myPopulateCameraOptions();
+    // Re-select ESP32 option if it was there before (re-enumeration wipes and re-adds webcams)
+    if (mySerialConnected && document.getElementById('opt-esp32-serial')) {
+      // keep current sel.value — user chose webcam, don't override
+    }
+    myLog('Webcam started');
+    document.getElementById('myStartBtn').style.display   = 'none';
+    document.getElementById('myStopCameraBtn').style.display = 'block';
+    myIsGrayscaleMode = document.getElementById('myGrayscaleToggle').checked;
+    if (myIsGrayscaleMode) {
+      myVideo.style.display  = 'none';
+      myCanvas.style.display = 'block';
+      if (myGrayscaleRenderTimer) clearInterval(myGrayscaleRenderTimer);
+      myGrayscaleRenderTimer = setInterval(() => {
+        myCtx.drawImage(myVideo, 0, 0, 240, 240);
+        const imgData = myCtx.getImageData(0,0,240,240);
+        const d = imgData.data;
+        for (let i=0; i<d.length; i+=4) {
+          const g = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+          d[i]=d[i+1]=d[i+2]=g;
+        }
+        myCtx.putImageData(imgData,0,0);
+      }, 33);
+    } else {
+      myVideo.style.display  = 'block';
+      myCanvas.style.display = 'none';
+    }
+  }
+
+  if (!myModel) {
+    const inCh = myIsGrayscaleMode ? 1 : 3;
+    const lr   = parseFloat(document.getElementById('myLearningRate').value) || 0.001;
+    const drop = parseFloat(document.getElementById('myDropoutRate').value) || 0.3;
+
+    document.getElementById('myResolutionSelect').disabled = true;
+    document.getElementById('myResolutionCustom').disabled = true;
+    myUpdateResolutionHint();
+
+    myModel = tf.sequential();
+    myModel.add(tf.layers.conv2d({ inputShape:[myInputSize,myInputSize,inCh], kernelSize:3, filters:4, activation:null,
+      kernelRegularizer:tf.regularizers.l2({l2:0.0001}), biasInitializer:'zeros' }));
+    myModel.add(tf.layers.leakyReLU({alpha:0.1}));
+    myModel.add(tf.layers.maxPooling2d({poolSize:2, strides:2}));
+    myModel.add(tf.layers.conv2d({ kernelSize:3, filters:8, activation:null,
+      kernelRegularizer:tf.regularizers.l2({l2:0.0001}), biasInitializer:'zeros' }));
+    myModel.add(tf.layers.leakyReLU({alpha:0.1}));
+    myModel.add(tf.layers.flatten());
+    myModel.add(tf.layers.dropout({rate:drop}));
+    myModel.add(tf.layers.dense({ units:myNumClasses, activation:'softmax',
+      kernelInitializer:'heNormal', biasInitializer:'zeros' }));
+    myModel.compile({ optimizer:tf.train.adam(lr), loss:'categoricalCrossentropy', metrics:['accuracy'] });
+    const c2 = myGetConv2Out(myInputSize);
+    myLog(`Brain: ${myInputSize}x${myInputSize} ${myIsGrayscaleMode?'Grayscale':'RGB'} CNN | conv2 out: ${c2}x${c2} | flat: ${c2*c2*8} | Drop: ${drop} LR: ${lr}`);
+  }
+
+  if (myTimer) clearInterval(myTimer);
+  myTimer = setInterval(async () => {
+    let myInput = null;
+    if (!myCameraStopped && myVideo.srcObject && sel.value !== '__esp32serial__') {
+      myInput = myResizeTensor(tf.browser.fromPixels(myVideo), myInputSize);
+      if (myIsGrayscaleMode) {
+        const old = myInput;
+        myInput = tf.tidy(() => {
+          const r = old.slice([0,0,0],[myInputSize,myInputSize,1]);
+          const g = old.slice([0,0,1],[myInputSize,myInputSize,1]);
+          const b = old.slice([0,0,2],[myInputSize,myInputSize,1]);
+          return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+        });
+        old.dispose();
+      }
+      const old2 = myInput;
+      myInput = myInput.div(255.0).expandDims(0);
+      old2.dispose();
+    }
+
+    const minSamples = parseInt(document.getElementById('myMinSamples').value) || 10;
+    const counts = Array.from({length: myNumClasses}, (_, i) => myTrainData[i] ? myTrainData[i].length : 0);
+    const minCount = Math.min(...counts);
+    const maxCount = Math.max(...counts);
+    let batchSz = parseInt(document.getElementById('myBatchSize').value) || 6;
+    if (batchSz < myNumClasses) batchSz = myNumClasses;
+    if (batchSz % myNumClasses !== 0) batchSz = Math.ceil(batchSz / myNumClasses) * myNumClasses;
+    const samplesPerClass = Math.floor(batchSz / myNumClasses);
+    const useAll = document.getElementById('myUseAllData').checked;
+    let maxBatches = 0;
+    if (useAll) {
+      const ep = parseFloat(document.getElementById('myTargetEpochs').value) || 0;
+      const total = counts.reduce((a,b)=>a+b,0);
+      const bpe   = total > 0 ? Math.ceil(total/batchSz) : 1;
+      maxBatches = ep > 0 ? Math.ceil(ep*bpe) : 0;
+    } else {
+      maxBatches = parseInt(document.getElementById('myMaxBatches').value) || 0;
+    }
+    const reachedLimit = maxBatches > 0 && myEpochCount >= maxBatches;
+
+    if (minCount >= minSamples && !myTrainingPaused && !reachedLimit) {
+      if (maxCount > minCount*2 && Math.random() < 0.01)
+        myLog(`Imbalanced data [${counts.join(', ')}]`);
+
+      // ── Helper: build a one-hot label vector explicitly by index ──────────
+      // Avoids the fragile ternary-chain fallthrough that silently mislabels
+      // class 2 whenever the label value is anything unexpected.
+      const myOneHot = (cls, n) => Array.from({length: n}, (_, i) => i === cls ? 1 : 0);
+
+      let myBatch = [], myLabels = [];
+      if (useAll) {
+        // ── Rebuild shuffle at the START of each epoch ─────────────────────
+        // Only reshuffle when the index is exactly 0 (beginning of epoch).
+        // Do NOT reset myAllDataIndex inside the fill loop — that caused the
+        // tail of the shuffled array (where class 2 samples often land) to be
+        // skipped: the last partial batch would fire, immediately reset the
+        // index to 0, then the next interval tick would trigger a fresh epoch
+        // shuffle before those tail samples were ever trained on.
+        if (myAllDataIndex === 0) {
+          myCurrentEpoch++;
+          myShuffledData = [];
+          for (let cls=0; cls<myNumClasses; cls++)
+            for (let i=0; i<myTrainData[cls].length; i++)
+              myShuffledData.push({sample:myTrainData[cls][i], label:cls});
+          for (let i=myShuffledData.length-1; i>0; i--) {
+            const j = Math.floor(Math.random()*(i+1));
+            [myShuffledData[i],myShuffledData[j]] = [myShuffledData[j],myShuffledData[i]];
+          }
+          myLog(`Epoch ${myCurrentEpoch} start (${myShuffledData.length} samples)`);
+        }
+        // Fill this batch from the shuffled array — stop at end OR batchSz,
+        // whichever comes first. After filling, advance the index; only wrap
+        // back to 0 when the epoch is fully exhausted (not mid-batch).
+        for (let i=0; i<batchSz && myAllDataIndex<myShuffledData.length; i++) {
+          const item = myShuffledData[myAllDataIndex];
+          myBatch.push(Math.random()>0.5 ? myAugment(item.sample) : tf.clone(item.sample));
+          myLabels.push(myOneHot(item.label, myNumClasses));  // explicit — no fallthrough
+          myAllDataIndex++;
+        }
+        // Reset to 0 only after the epoch is fully consumed. The next interval
+        // tick will then trigger the reshuffle above before filling any batch,
+        // so no samples are ever silently dropped at the epoch boundary.
+        if (myAllDataIndex >= myShuffledData.length) myAllDataIndex = 0;
+      } else {
+        // ── Random-batch mode: equal samples per class each batch ──────────
+        for (let cls=0; cls<myNumClasses; cls++)
+          for (let i=0; i<samplesPerClass; i++) {
+            const idx = Math.floor(Math.random()*myTrainData[cls].length);
+            myBatch.push(Math.random()>0.5 ? myAugment(myTrainData[cls][idx]) : tf.clone(myTrainData[cls][idx]));
+            myLabels.push(myOneHot(cls, myNumClasses));  // explicit — no fallthrough
+          }
+      }
+
+      const bt = tf.concat(myBatch);
+      const lt = tf.tensor2d(myLabels);
+      let loss = 0;
+      try {
+        const r = await myModel.trainOnBatch(bt, lt);
+        loss = Array.isArray(r) ? r[0] : r;
+        if (isNaN(loss)||!isFinite(loss)) { myLog('Invalid loss, skipping'); loss=0; }
+      } catch(e) { myLog('Training error: '+e.message); loss=0; }
+      bt.dispose(); lt.dispose();
+      myBatch.forEach(t => {
+        let stored = false;
+        for (let c=0; c<myNumClasses; c++) if (myTrainData[c].includes(t)) { stored=true; break; }
+        if (!stored) t.dispose();
+      });
+      myEpochCount++;
+      if (loss>0) { myLossSum+=loss; myLossCount++; }
+
+      // ── UI status update every 10 batches ────────────────────────────────
+      if (myEpochCount % 10 === 0) {
+        const avg = myLossCount>0 ? myLossSum/myLossCount : 0;
+        if (avg>0&&isFinite(avg)) myLossHistory.push(avg);
+        if (myLossHistory.length>20) myLossHistory.shift();
+        const recAvg = myLossHistory.length>0 ? myLossHistory.reduce((a,b)=>a+b,0)/myLossHistory.length : 0;
+        document.getElementById('myEpochDisplay').innerText = myEpochCount;
+        document.getElementById('myLossDisplay').innerText  = myLossHistory.length>0 ? recAvg.toFixed(4) : '--';
+        let status='', pct=0;
+        if (!myLossHistory.length)  { status='Initializing...'; pct=5; }
+        else if (recAvg>1.0)        { status='Starting...';     pct=10; }
+        else if (recAvg>0.5)        { status='Training...';     pct=30; }
+        else if (recAvg>0.2)        { status='Improving...';    pct=60; }
+        else if (recAvg>0.1)        { status='Converging...';   pct=80; }
+        else                        { status='Well Trained!';   pct=100; }
+        document.getElementById('myStatusDisplay').innerText  = status;
+        document.getElementById('myProgressBar').style.width  = pct+'%';
+        document.getElementById('myPauseBtn').disabled = false;
+
+        // ── Confusion matrix + auto-export weights every 10 batches ──────
+        myUpdateConfusionMatrix();
+        if (mySaveFolder && document.getElementById('myAutoSaveWeights').checked) {
+          myExportBin();        // saves to mySaveFolder/header/myWeights.bin
+          myExportWeightsH();   // saves to mySaveFolder/header/myWeights.h
+        }
+
+        // ── Activity log: print loss every 50 batches ─────────────────────
+        if (myEpochCount - myLastLoggedBatch >= 50) {
+          myLastLoggedBatch = myEpochCount;
+          const lossBar = myLossBar(recAvg);
+          if (useAll) {
+            myLog(`Batch ${myEpochCount} | Epoch ${myCurrentEpoch} | Loss ${recAvg.toFixed(4)} ${lossBar} | ${status}`);
+          } else {
+            myLog(`Batch ${myEpochCount} | Loss ${recAvg.toFixed(4)} ${lossBar} | ${status}`);
+          }
+        }
+
+        myLossSum = 0; myLossCount = 0;
+      }
+
+      // ── Validation: run at epoch boundary (useAll) or every 100 batches ──
+      // Epoch boundary is detected by myAllDataIndex having just reset to 0
+      // after draining the shuffle. In random-batch mode we use a fixed cadence.
+      const isEpochBoundary = useAll && myAllDataIndex === 0 && myCurrentEpoch > 0;
+      const isValCadence    = !useAll && (myEpochCount - myLastValBatch >= 100);
+      if ((isEpochBoundary || isValCadence) && myEpochCount > 0) {
+        myLastValBatch = myEpochCount;
+        await myLogValidation(useAll ? `Epoch ${myCurrentEpoch}` : `Batch ${myEpochCount}`);
+      }
+    } else if (reachedLimit) {
+      if (!myTrainingPaused) {
+        myPauseTraining();
+        myLog(`Training complete — reached target`);
+      }
+      document.getElementById('myStatusDisplay').innerText = `Completed (${myEpochCount} batches)`;
+    } else {
+      if (myTrainingPaused) {
+        document.getElementById('myStatusDisplay').innerText = 'Paused';
+      } else {
+        const need = counts.map(c => Math.max(0, minSamples-c));
+        document.getElementById('myStatusDisplay').innerText = `Waiting (need: ${need.join(', ')})`;
+      }
+    }
+
+    if (myInput && !myAnalysisStopped) {
+      document.getElementById('myStopAnalysisBtn').disabled = false;
+      const pred  = myModel.predict(myInput);
+      // v116: browser heatmap — extract Conv2 activations on same input before disposing
+      if (myBrowserHeatmap) await myExtractAndRenderBrowserHeatmap(myInput);
+      const probs = await pred.data();
+      const id    = (await pred.argMax(1).data())[0];
+      const pcts  = Array.from({length: myNumClasses}, (_, i) => (probs[i]*100).toFixed(1));
+      const max   = Math.max(...probs)*100;
+      const warn  = max<50 ? '<br>Low confidence' : '';
+      const labels = myGetLabels();
+      document.getElementById('myOutputDisplay').innerHTML =
+        `DETECTED: ${labels[id]}<br>` +
+        Array.from({length: myNumClasses}, (_, i) => `${labels[i]}: ${pcts[i]}%`).join('<br>') +
+        warn;
+      pred.dispose();
+    } else if (sel.value === '__esp32serial__' && myEspLastFrame && myModel && !myAnalysisStopped) {
+      // ESP32 camera — run inference on the last received frame
+      document.getElementById('myStopAnalysisBtn').disabled = false;
+      const tmp = document.createElement('canvas'); tmp.width = 240; tmp.height = 240;
+      const tc = tmp.getContext('2d'); tc.putImageData(myEspLastFrame, 0, 0);
+      let et = myResizeTensor(tf.browser.fromPixels(tmp), myInputSize);
+      if (myIsGrayscaleMode) {
+        const old = et;
+        et = tf.tidy(() => {
+          const r = old.slice([0,0,0],[myInputSize,myInputSize,1]);
+          const g = old.slice([0,0,1],[myInputSize,myInputSize,1]);
+          const b = old.slice([0,0,2],[myInputSize,myInputSize,1]);
+          return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+        });
+        old.dispose();
+      }
+      const old2 = et; et = et.div(255.0).expandDims(0); old2.dispose();
+      const pred  = myModel.predict(et);
+      // v116: browser heatmap — extract Conv2 activations from ESP32 stream frames
+      if (myBrowserHeatmap) await myExtractAndRenderBrowserHeatmap(et);
+      const probs = await pred.data();
+      const id    = (await pred.argMax(1).data())[0];
+      const pcts  = Array.from({length: myNumClasses}, (_, i) => (probs[i]*100).toFixed(1));
+      const max   = Math.max(...probs)*100;
+      const warn  = max<50 ? '<br>Low confidence' : '';
+      const labels = myGetLabels();
+      document.getElementById('myOutputDisplay').innerHTML =
+        `DETECTED: ${labels[id]}<br>` +
+        Array.from({length: myNumClasses}, (_, i) => `${labels[i]}: ${pcts[i]}%`).join('<br>') +
+        warn;
+      pred.dispose(); et.dispose();
+    } else if (myCameraStopped) {
+      document.getElementById('myOutputDisplay').innerHTML = 'Camera Stopped — training continues...';
+    }
+    if (myInput) myInput.dispose();
+  }, 150);
+
+  myLog('Brain started');
+}
+
+function myPauseTraining() {
+  myTrainingPaused = true;
+  document.getElementById('myPauseBtn').style.display = 'none';
+  document.getElementById('myResumeBtn').style.display = 'block';
+  myLog('Training paused');
+}
+
+function myResumeTraining() {
+  myTrainingPaused = false;
+  document.getElementById('myPauseBtn').style.display = 'inline-block';
+  document.getElementById('myResumeBtn').style.display = 'none';
+  myLog('Training resumed');
+
+  // v116: if the training loop was never started (camera was never opened),
+  // or the interval was cleared, kick it off now using buffered data only.
+  // myStartAll() is safe to call again — it skips camera init if already stopped
+  // and skips model rebuild if myModel already exists.
+  if (!myTimer) {
+    myLog('No training loop running — starting data-only training loop');
+    myStartAll();
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// TRAINING LOG HELPERS
+// ─────────────────────────────────────────────────────────
+
+// Returns a short ASCII bar representing loss magnitude.
+// Full bar (████████) = loss ~1.1+  (random / untrained)
+// Empty bar (░░░░░░░░) = loss ~0.05 (well converged)
+function myLossBar(loss) {
+  const filled = Math.round(Math.min(1, loss / 1.1) * 8);
+  return '█'.repeat(filled) + '░'.repeat(8 - filled);
+}
+
+// Run a quick validation pass and print per-class accuracy to the Activity Log.
+// Uses the last `validationImages` samples per class from myRawData as the
+// held-out set (matching the ESP32 firmware convention).  All tensors are
+// created and disposed inside tf.tidy so there is no memory leak.
+async function myLogValidation(label) {
+  if (!myModel) return;
+  const valN   = parseInt(document.getElementById('myExportValidationImages').value) || 3;
+  const labels = myGetLabels();
+  let totalCorrect = 0, totalSamples = 0;
+  const perClass = [];
+
+  for (let cls = 0; cls < myNumClasses; cls++) {
+    if (!raw || raw.length === 0) { perClass.push('—'); continue; }
+
+    // Take the last valN images as the validation set.
+    // If the class has fewer than valN images use all of them.
+    const slice = raw.slice(Math.max(0, raw.length - valN));
+    if (slice.length === 0) { perClass.push('—'); continue; }
+
+    let correct = 0;
+    // Process one image at a time to keep peak memory low
+    for (const imgData of slice) {
+      const predCls = tf.tidy(() => {
+        let t = tf.browser.fromPixels(imgData);
+        t = tf.image.resizeNearestNeighbor(t, [myInputSize, myInputSize]);
+        if (myIsGrayscaleMode) t = t.mean(2).expandDims(-1);
+        t = t.div(255.0).expandDims(0);
+        return myModel.predict(t).argMax(-1).dataSync()[0];
+      });
+      if (predCls === cls) correct++;
+    }
+
+    const acc = (correct / slice.length * 100).toFixed(0);
+    perClass.push(`${correct}/${slice.length} (${acc}%)`);
+    totalCorrect += correct;
+    totalSamples += slice.length;
+  }
+
+  const overallAcc = totalSamples > 0
+    ? (totalCorrect / totalSamples * 100).toFixed(1)
+    : '—';
+
+  myLog(
+    `▶ Val @ ${label} | Overall ${overallAcc}% | ` +
+    labels.map((l, i) => `${l}: ${perClass[i]}`).join(' | ')
+  );
+}
+
+async function myDebugCurrentFrame() {
+  const sel = document.getElementById('myCameraSelect');
+  if (sel.value === '__esp32serial__') {
+    if (!myEspLastFrame) { myLog('No ESP32 frame yet'); return; }
+    const tmp = document.createElement('canvas'); tmp.width = 240; tmp.height = 240;
+    const tc = tmp.getContext('2d'); tc.putImageData(myEspLastFrame, 0, 0);
+    let t = myResizeTensor(tf.browser.fromPixels(tmp), myInputSize);
+    if (myIsGrayscaleMode) {
+      const old = t;
+      t = tf.tidy(() => {
+        const r = old.slice([0,0,0],[myInputSize,myInputSize,1]);
+        const g = old.slice([0,0,1],[myInputSize,myInputSize,1]);
+        const b = old.slice([0,0,2],[myInputSize,myInputSize,1]);
+        return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+      });
+      old.dispose();
+    }
+    const old2 = t; t = t.div(255.0).expandDims(0); old2.dispose();
+    if (!myModel) { myLog('No model yet'); t.dispose(); return; }
+    const p = myModel.predict(t); const probs = await p.data();
+    const labels = myGetLabels();
+    myLog('Debug ESP32 frame: ' + labels.map((l,i) => `${l}: ${(probs[i]*100).toFixed(1)}%`).join('  '));
+    p.dispose(); t.dispose();
+    return;
+  }
+  const v = document.getElementById('myVideo1');
+  if (!v.srcObject) { myLog('No camera running'); return; }
+  let t = myResizeTensor(tf.browser.fromPixels(v), myInputSize);
+  if (myIsGrayscaleMode) {
+    const old = t;
+    t = tf.tidy(() => {
+      const r = old.slice([0,0,0],[myInputSize,myInputSize,1]);
+      const g = old.slice([0,0,1],[myInputSize,myInputSize,1]);
+      const b = old.slice([0,0,2],[myInputSize,myInputSize,1]);
+      return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+    });
+    old.dispose();
+  }
+  const old2 = t; t = t.div(255.0).expandDims(0); old2.dispose();
+  if (!myModel) { myLog('No model yet'); t.dispose(); return; }
+  const p = myModel.predict(t); const probs = await p.data();
+  const labels = myGetLabels();
+  myLog('Debug webcam: ' + labels.map((l,i) => `${l}: ${(probs[i]*100).toFixed(1)}%`).join('  '));
+  p.dispose(); t.dispose();
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 7 — CAPTURE / LOAD / SAVE IMAGES
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// IMAGE FOLDER — File System Access API (Chrome/Edge only)
+//
+// Folder structure mirrors the SD card root exactly:
+//   <chosen folder>/          ← mySaveFolder (the "SD card root" on PC)
+//     images/
+//       0Blank/               ← class sub-folders, named by label
+//       1Cup/
+//       2Pen/
+//     header/                 ← created automatically if absent
+//
+// This means you can literally mirror the SD card contents to a PC
+// folder and all paths stay consistent between PC and ESP32.
+// ─────────────────────────────────────────────────────────
+
+// Helper: get (or create) the images/ sub-folder inside mySaveFolder
+async function myGetImagesDir() {
+  return await mySaveFolder.getDirectoryHandle('images', { create: true });
+}
+
+// Helper: get (or create) images/ClassName/ inside mySaveFolder
+async function myGetClassDir(classIdx, createIfMissing) {
+  const imagesDir = await myGetImagesDir();
+  const label = myGetLabels()[classIdx];
+  return await imagesDir.getDirectoryHandle(label, { create: createIfMissing });
+}
+
+function myUpdateRamHint() {
+  const buf = parseInt(document.getElementById('myMaxBufferInput').value) || 100;
+  const ch = myIsGrayscaleMode ? 1 : 3;
+  const kb = Math.round(myInputSize * myInputSize * ch * 4 / 1024);
+  const totalKb = kb * buf * 3;
+  const hint = document.getElementById('myRamHint');
+  if (hint) hint.textContent = `~${kb} KB/image · ${buf}×3 classes = ~${(totalKb/1024).toFixed(1)} MB RAM`;
+}
+
+function myUpdateDiskCount(classIdx) {
+  const el = document.getElementById('myDiskCount' + classIdx);
+  if (!el) return;
+  const n = myDiskTotals[classIdx];
+  el.textContent = n > 0 ? `(${n} on disk)` : '';
+}
+
+// Pick a project root folder — mirrors SD card structure.
+// Creates images/ and header/ sub-folders if absent.
+// Scans existing class images to initialise file counters.
+async function myPickSaveFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    myLog('File System Access API not supported — use Chrome or Edge');
+    return;
+  }
+  try {
+    mySaveFolder = await window.showDirectoryPicker({ mode: 'readwrite' });
+    // Ensure standard sub-folders exist
+    await mySaveFolder.getDirectoryHandle('images', { create: true });
+    await mySaveFolder.getDirectoryHandle('header', { create: true });
+    await myScanFolderCounters();
+    myUpdateFolderStatus();
+    myLog(`Project folder set: ${mySaveFolder.name}/  (images/ and header/ ready)`);
+    myLog('  Captures will save to images/ClassName/ — mirrors SD card root structure');
+  } catch(e) {
+    if (e.name !== 'AbortError') myLog('Folder picker error: ' + e.message);
+  }
+}
+
+// Scan images/ClassName/ inside mySaveFolder to count existing JPEGs
+// and initialise auto-save counters so new files don't collide.
+async function myScanFolderCounters() {
+  if (!mySaveFolder) return;
+  for (let i = 0; i < myNumClasses; i++) {
+      let count = 0, maxN = 0;
+      for await (const [name] of classDir.entries()) {
+        if (/\.(jpg|jpeg)$/i.test(name)) {
+          count++;
+          const m = name.match(/(\d+)/);
+          if (m) maxN = Math.max(maxN, parseInt(m[1]));
+        }
+      }
+      myDiskTotals[i] = count;
+      myAutoSaveCounters[i] = maxN + 1;
+      myUpdateDiskCount(i);
+    } catch(e) {
+      myDiskTotals[i] = 0;  // class folder doesn't exist yet — fine
+    }
+  }
+}
+
+function myUpdateFolderStatus() {
+  const el  = document.getElementById('myFolderStatus');
+  const btn = document.getElementById('myForgetFolderBtn');
+  if (!mySaveFolder) {
+    el.textContent = 'None — images held in RAM only';
+    el.style.color = '#888';
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+  const totals = Array.from({length: myNumClasses}, (_, i) => myDiskTotals[i] || 0);
+  el.textContent = `✓ ${mySaveFolder.name}/images/  [${totals.join(' / ')} images on disk]`;
+  el.style.color = '#007700';
+  if (btn) btn.style.display = 'inline-block';
+}
+
+function myForgetSaveFolder() {
+  mySaveFolder = null;
+  for (let i = 0; i < myNumClasses; i++) { myDiskTotals[i] = 0; myAutoSaveCounters[i] = 1; }
+  for (let i = 0; i < myNumClasses; i++) myUpdateDiskCount(i);
+  myUpdateFolderStatus();
+  myLog('Project folder forgotten — images will load into RAM only');
+}
+
+// Write a JPEG blob to disk at: mySaveFolder/images/ClassName/img_NNNN.jpg
+async function myAutoSaveJpegToFolder(classIdx, blob) {
+  if (!mySaveFolder) return false;
+  try {
+    const classDir = await myGetClassDir(classIdx, true);
+    const n = myAutoSaveCounters[classIdx]++;
+    myDiskTotals[classIdx]++;
+    const filename = 'img_' + String(n).padStart(4, '0') + '.jpg';
+    const fileHandle = await classDir.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    myUpdateDiskCount(classIdx);
+    myUpdateFolderStatus();
+    return true;
+  } catch(e) {
+    myLog('Disk save failed: ' + e.message);
+    return false;
+  }
+}
+
+// Load images from mySaveFolder/images/ClassName/ into the RAM training window.
+// If no folder is set, falls back to a one-shot directory picker.
+async function myPickAndLoadFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    myLog('File System Access API not supported — use Chrome or Edge'); return;
+  }
+
+  // If we already have a project folder, load from it directly without re-picking
+  let rootDir = mySaveFolder;
+  if (!rootDir) {
+    try { rootDir = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+    catch(e) { if (e.name !== 'AbortError') myLog('Folder picker error: ' + e.message); return; }
+    // Don't set mySaveFolder here — this is load-only, user must explicitly Choose Folder to save
+  }
+
+  // Navigate into images/ sub-folder
+  let imagesDir;
+  try {
+    imagesDir = await rootDir.getDirectoryHandle('images', { create: false });
+  } catch(e) {
+    myLog('No images/ sub-folder found in ' + rootDir.name + ' — expected structure: root/images/ClassName/');
+    return;
+  }
+
+  const labels = myGetLabels();
+  myLog('Loading from ' + rootDir.name + '/images/ ...');
+
+  for (let cls = 0; cls < myNumClasses; cls++) {
+    let classDir;
+    try { classDir = await imagesDir.getDirectoryHandle(labels[cls], { create: false }); }
+    catch(e) { myLog('  ' + labels[cls] + ': not found, skipping'); continue; }
+
+    let loaded = 0;
+    const lc = document.createElement('canvas'); lc.width = 240; lc.height = 240;
+    const lctx = lc.getContext('2d');
+
+    for await (const [name, fileHandle] of classDir.entries()) {
+      if (!/\.(jpg|jpeg|png)$/i.test(name)) continue;
+      try {
+        const file = await fileHandle.getFile();
+        await new Promise((res, rej) => {
+          const img = new Image();
+          const url = URL.createObjectURL(file);
+          img.onload = () => {
+            lctx.drawImage(img, 0, 0, 240, 240);
+            const raw = lctx.getImageData(0, 0, 240, 240);
+            if (myRawData[cls].length >= myMaxBuffer) myRawData[cls].shift();
+            myRawData[cls].push(raw);
+            let t = myResizeTensor(tf.browser.fromPixels(lc), myInputSize);
+            if (myIsGrayscaleMode) {
+              const old = t;
+              t = tf.tidy(() => {
+                const r = old.slice([0,0,0],[myInputSize,myInputSize,1]);
+                const g = old.slice([0,0,1],[myInputSize,myInputSize,1]);
+                const b = old.slice([0,0,2],[myInputSize,myInputSize,1]);
+                return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+              });
+              old.dispose();
+            }
+            const old2 = t; t = t.div(255.0).expandDims(0); old2.dispose();
+            if (myTrainData[cls].length < myMaxBuffer) { myTrainData[cls].push(t); }
+            else { myTrainData[cls][0].dispose(); myTrainData[cls].shift(); myTrainData[cls].push(t); }
+            loaded++;
+            URL.revokeObjectURL(url); res();
+          };
+          img.onerror = () => { URL.revokeObjectURL(url); rej(); };
+          img.src = url;
+        });
+        document.getElementById('myCount' + cls).innerHTML = myTrainData[cls].length + ' samples';
+      } catch(e2) { /* skip corrupt file */ }
+    }
+    myLog('  ' + labels[cls] + ': ' + loaded + ' images loaded into RAM window');
+  }
+  myUpdateTrainingStatus();
+  myUpdateEpochHint();
+}
+
+// Sync all images from mySaveFolder/images/ to the ESP32 SD card /images/.
+// Must be called with streaming stopped — same serial port, no concurrent use.
+async function mySyncFolderToSd() {
+  if (!mySaveFolder) { myLog('No project folder set — choose a folder first'); return; }
+  if (!mySerialWriter) { myLog('Not connected to ESP32 — connect WebSerial first'); return; }
+  if (myEspStreaming) {
+    myLog('⚠ Stop ESP32 streaming before syncing — they share the same serial port');
+    return;
+  }
+
+  const labels = myGetLabels();
+  const statusEl = document.getElementById('mySyncSdStatus');
+  let totalSent = 0;
+  document.getElementById('mySyncSdBtn').disabled = true;
+  if (statusEl) statusEl.textContent = 'Starting...';
+
+  // Get images/ sub-folder
+  let imagesDir;
+  try { imagesDir = await myGetImagesDir(); }
+  catch(e) { myLog('Sync: no images/ folder in project root'); document.getElementById('mySyncSdBtn').disabled = false; return; }
+
+  for (let cls = 0; cls < myNumClasses; cls++) {
+
+    // Ensure the matching SD directory exists before writing
+    await myEnsureSdDir('/images');
+    await myEnsureSdDir('/images/' + labels[cls]);
+
+    const sdFolder = '/images/' + labels[cls];
+    let sent = 0;
+
+    for await (const [name, fileHandle] of classDir.entries()) {
+      if (!/\.(jpg|jpeg)$/i.test(name)) continue;
+      try {
+        const file = await fileHandle.getFile();
+        const ab = await file.arrayBuffer();
+        const bytes = new Uint8Array(ab);
+        const sdPath = sdFolder + '/' + name;
+
+        // Encode JPEG as base64 for SD_JPEG_WRITE protocol.
+        // Use small 48-char chunks with per-10-chunk yield delays to prevent
+        // ESP32 serial line-buffer overflow (4096-byte hard limit per line).
+        // "SD_JPEG_CHUNK:" (14) + 48 data + "\n" = 63 bytes/line — safely under 4096.
+        let bin = '';
+        for (let b = 0; b < bytes.length; b++) bin += String.fromCharCode(bytes[b]);
+        const b64 = btoa(bin);
+        const CHUNK = 48;
+
+        await myWriteSerial('SD_JPEG_WRITE_START:' + sdPath + ':' + bytes.length + '\n');
+        await new Promise(r => setTimeout(r, 120));  // wait for OK:JPEG_WRITE_READY
+        for (let pos = 0; pos < b64.length; pos += CHUNK) {
+          await myWriteSerial('SD_JPEG_CHUNK:' + b64.substring(pos, pos + CHUNK) + '\n');
+          // Yield every 10 chunks to prevent flooding ESP32 serial receive buffer
+          if (((pos / CHUNK) + 1) % 10 === 0) await new Promise(r => setTimeout(r, 25));
+        }
+        await myWriteSerial('SD_JPEG_WRITE_END\n');
+        await new Promise(r => setTimeout(r, 150)); // wait for JPEG_WRITE_DONE before next file
+        sent++; totalSent++;
+        if (statusEl) statusEl.textContent = labels[cls] + ': ' + sent + ' sent...';
+      } catch(e) { myLog('Sync error on ' + name + ': ' + e.message); }
+    }
+    myLog('✓ Synced ' + labels[cls] + ': ' + sent + ' files → SD ' + sdFolder + '/');
+  }
+
+  document.getElementById('mySyncSdBtn').disabled = false;
+  if (statusEl) statusEl.textContent = 'Done — ' + totalSent + ' files sent';
+  myLog('✓ Sync complete — ' + totalSent + ' total files sent to ESP32 SD');
+}
+
+// ─────────────────────────────────────────────────────────
+// CAPTURE from live camera (webcam or ESP32 last frame)
+// v116: if a save folder is set, write JPEG to disk instead of
+// (or in addition to) loading into RAM.  Also optionally saves
+// to ESP32 SD if the "Also save to SD" checkbox is ticked.
+// ─────────────────────────────────────────────────────────
+function myCollect(myID) {
+  const sel = document.getElementById('myCameraSelect');
+  if (sel.value === '__esp32serial__') {
+    if (!myEspLastFrame) { myLog('No ESP32 frame yet — request a frame first'); return; }
+    // Auto-save ESP32 frame to PC folder if one is set
+    if (mySaveFolder && myEspLastB64) {
+      (async () => {
+        const binary = atob(myEspLastB64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], {type: 'image/jpeg'});
+        await myAutoSaveJpegToFolder(myID, blob);
+      })();
+    }
+    if (myRawData[myID].length >= myMaxBuffer) myRawData[myID].shift();
+    myRawData[myID].push(myEspLastFrame);
+    const tmp = document.createElement('canvas'); tmp.width=240; tmp.height=240;
+    const tc = tmp.getContext('2d'); tc.putImageData(myEspLastFrame, 0, 0);
+    let t = myResizeTensor(tf.browser.fromPixels(tmp), myInputSize);
+    if (myIsGrayscaleMode) {
+      const old=t; t=tf.tidy(()=>{const r=old.slice([0,0,0],[myInputSize,myInputSize,1]);const g=old.slice([0,0,1],[myInputSize,myInputSize,1]);const b=old.slice([0,0,2],[myInputSize,myInputSize,1]);return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));});old.dispose();
+    }
+    const old2=t; t=t.div(255.0).expandDims(0); old2.dispose();
+    if (myTrainData[myID].length < myMaxBuffer) { myTrainData[myID].push(t); }
+    else { myTrainData[myID][0].dispose(); myTrainData[myID].shift(); myTrainData[myID].push(t); }
+    document.getElementById('myCount'+myID).innerHTML = `${myTrainData[myID].length} samples`;
+    myLog(`Class ${myID} captured from ESP32 (${myTrainData[myID].length} in RAM${mySaveFolder ? ' · saved to disk' : ''})`);
+    myUpdateEpochHint(); return;
+  }
+
+  const v = document.getElementById('myVideo1');
+  const c = document.getElementById('myCanvas1');
+  if (!v.srcObject && c.style.display === 'none') { myLog('Start Camera & Brain first'); return; }
+  const drawSrc = (myIsGrayscaleMode && c.style.display !== 'none') ? c : v;
+  myRawCtx.drawImage(drawSrc, 0, 0, 240, 240);
+  const raw = myRawCtx.getImageData(0, 0, 240, 240);
+
+  // Auto-save to PC folder if one is set (async, non-blocking)
+  if (mySaveFolder) {
+    (async () => {
+      const blob = await new Promise(res => myRawCanvas.toBlob(res, 'image/jpeg', 0.92));
+      await myAutoSaveJpegToFolder(myID, blob);
+    })();
+  }
+
+  if (myRawData[myID].length >= myMaxBuffer) myRawData[myID].shift();
+  myRawData[myID].push(raw);
+  let t = myResizeTensor(tf.browser.fromPixels(myIsGrayscaleMode ? c : v), myInputSize);
+  if (myIsGrayscaleMode) {
+    const old=t; t=tf.tidy(()=>{const r=old.slice([0,0,0],[myInputSize,myInputSize,1]);const g=old.slice([0,0,1],[myInputSize,myInputSize,1]);const b=old.slice([0,0,2],[myInputSize,myInputSize,1]);return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));});old.dispose();
+  }
+  const old2=t; t=t.div(255.0).expandDims(0); old2.dispose();
+  const data=t.dataSync();
+  for (let i=0;i<data.length;i++) if (isNaN(data[i])||!isFinite(data[i])) { myLog('Bad frame, skipping'); t.dispose(); return; }
+  if (myTrainData[myID].length < myMaxBuffer) { myTrainData[myID].push(t); }
+  else { myTrainData[myID][0].dispose(); myTrainData[myID].shift(); myTrainData[myID].push(t); }
+  document.getElementById('myCount'+myID).innerHTML = `${myTrainData[myID].length} samples`;
+  myLog(`Class ${myID}: ${myTrainData[myID].length} in RAM${mySaveFolder ? ' · ' + myDiskTotals[myID] + ' on disk' : ''}`);
+  myUpdateEpochHint();
+}
+
+function myLoadImages(myID) {
+  const inp = document.createElement('input'); inp.type='file'; inp.multiple=true; inp.accept='image/*';
+  inp.onchange = async (e) => {
+    const files = Array.from(e.target.files);
+    myLog(`Loading ${files.length} images for Class ${myID}...`);
+    let loaded = 0;
+    const lc = document.createElement('canvas'); lc.width=240; lc.height=240;
+    const lctx = lc.getContext('2d');
+    for (const file of files) {
+      try {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        await new Promise((res,rej) => {
+          img.onload = () => {
+            lctx.drawImage(img,0,0,240,240);
+            const raw=lctx.getImageData(0,0,240,240);
+            if (myRawData[myID].length>=myMaxBuffer) myRawData[myID].shift();
+            myRawData[myID].push(raw);
+            let t=myResizeTensor(tf.browser.fromPixels(lc),myInputSize);
+            if (myIsGrayscaleMode){
+              const old=t; t=tf.tidy(()=>{const r=old.slice([0,0,0],[myInputSize,myInputSize,1]);const g=old.slice([0,0,1],[myInputSize,myInputSize,1]);const b=old.slice([0,0,2],[myInputSize,myInputSize,1]);return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));});old.dispose();
+            }
+            const old2=t; t=t.div(255.0).expandDims(0); old2.dispose();
+            if (myTrainData[myID].length<myMaxBuffer){myTrainData[myID].push(t);}
+            else{myTrainData[myID][0].dispose();myTrainData[myID].shift();myTrainData[myID].push(t);}
+            loaded++;
+            URL.revokeObjectURL(url); res();
+          };
+          img.onerror=()=>{ URL.revokeObjectURL(url); rej(); };
+          img.src=url;
+        });
+      } catch(e) {}
+    }
+    document.getElementById('myCount'+myID).innerHTML = `${myTrainData[myID].length} samples`;
+    myLog(`Class ${myID}: loaded ${loaded}/${files.length} (total: ${myTrainData[myID].length})`);
+    myUpdateTrainingStatus();
+  };
+  inp.click();
+}
+
+// ─────────────────────────────────────────────────────────
+// UPDATE TRAINING STATUS — called whenever sample counts change.
+// Shows current counts vs minSamples so students can see
+// progress even before clicking Start Camera & Brain.
+// If the model is already running (myTimer set) this is a no-op
+// since the setInterval loop updates status itself.
+// ─────────────────────────────────────────────────────────
+function myUpdateTrainingStatus() {
+  if (myTimer) return; // loop is running, it handles display
+  const minSamples = parseInt(document.getElementById('myMinSamples').value) || 10;
+  const counts = [myTrainData[0].length, myTrainData[1].length, myTrainData[2].length];
+  const minCount = Math.min(...counts);
+  const need = counts.map(c => Math.max(0, minSamples - c));
+  const allReady = minCount >= minSamples;
+  const statusEl = document.getElementById('myStatusDisplay');
+  const startBtn = document.getElementById('myStartBtn');
+  if (statusEl) {
+    if (allReady) {
+      // v116: if camera is stopped but data is loaded, offer training-only start
+      if (myCameraStopped) {
+        statusEl.innerText = `Data ready — click "Start Camera & Brain" to train on buffered data (no live inference)`;
+        if (startBtn) startBtn.style.display = 'inline-block';
+      } else {
+        statusEl.innerText = `Ready — click "Start Camera & Brain" to begin training`;
+      }
+    } else {
+      statusEl.innerText = `Loaded [${counts[0]}, ${counts[1]}, ${counts[2]}] — need ${need[0]} more for Class 0, ${need[1]} for Class 1, ${need[2]} for Class 2`;
+    }
+  }
+  myUpdateEpochHint();
+}
+// Sends SD_LIST:/images/ClassName, collects .jpg filenames,
+// then fetches each via SD_JPEG: one at a time.
+// Adds each decoded image to myRawData and myTrainData.
+// ─────────────────────────────────────────────────────────
+async function myLoadFromSd(myID) {
+  if (!mySerialWriter) { myLog('Not connected to ESP32 — connect WebSerial first'); return; }
+  const label = myGetLabels()[myID];
+  const folderPath = '/images/' + label;
+
+  myLog(`Loading images from SD ${folderPath}/...`);
+  mySerialLog(`→ SD_LIST:${folderPath}`);
+
+  // Set up state for the list → fetch pipeline
+  mySdLoadClassId = myID;
+  mySdLoadQueue = [];
+  mySdLoadCwd = folderPath;
+  mySdCollectList = true;
+  mySdEntries = [];   // won't be used but keep clean
+
+  // Request directory listing — SD_FILE: lines will populate mySdLoadQueue
+  // SD_LIST_END will call mySdPumpLoadQueue()
+  await myWriteSerial('SD_LIST:' + folderPath + '\n');
+}
+
+// Called when the SD_LIST_END arrives during a class load.
+// Fetches JPEGs one at a time: requests the next path, sets a callback
+// that decodes the JPEG into the class buffer, then calls itself again.
+async function mySdPumpLoadQueue() {
+  const myID = mySdLoadClassId;
+
+  if (mySdLoadQueue.length === 0) {
+    // Done
+    mySdLoadClassId = -1;
+    const total = myTrainData[myID] ? myTrainData[myID].length : 0;
+    myLog(`✓ SD load complete for Class ${myID} — ${total} samples total`);
+    mySerialLog(`SD load done: class ${myID} now has ${total} samples`);
+    document.getElementById('myCount'+myID).innerHTML = `${total} samples`;
+    myUpdateTrainingStatus();
+    return;
+  }
+
+  const path = mySdLoadQueue.shift();
+  mySerialLog(`→ SD_JPEG:${path}`);
+
+  // Set callback — fires when SD_JPEG_END arrives
+  mySdLoadOnJpegDone = async (b64) => {
+    await mySdAddJpegToClass(myID, b64, path);
+    // Update count after each image
+    document.getElementById('myCount'+myID).innerHTML = `${myTrainData[myID].length} samples`;
+    // Fetch next
+    await mySdPumpLoadQueue();
+  };
+
+  await myWriteSerial('SD_JPEG:' + path + '\n');
+}
+
+// Decode a base64 JPEG and add it to the given class buffer (rawData + trainData)
+async function mySdAddJpegToClass(myID, b64, path) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const lc = document.createElement('canvas'); lc.width = 240; lc.height = 240;
+      const lctx = lc.getContext('2d');
+      lctx.drawImage(img, 0, 0, 240, 240);
+
+      const raw = lctx.getImageData(0, 0, 240, 240);
+      if (myRawData[myID].length >= myMaxBuffer) myRawData[myID].shift();
+      myRawData[myID].push(raw);
+
+      let t = myResizeTensor(tf.browser.fromPixels(lc), myInputSize);
+      if (myIsGrayscaleMode) {
+        const old = t;
+        t = tf.tidy(() => {
+          const r = old.slice([0,0,0],[myInputSize,myInputSize,1]);
+          const g = old.slice([0,0,1],[myInputSize,myInputSize,1]);
+          const b = old.slice([0,0,2],[myInputSize,myInputSize,1]);
+          return r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+        });
+        old.dispose();
+      }
+      const old2 = t; t = t.div(255.0).expandDims(0); old2.dispose();
+
+      if (myTrainData[myID].length < myMaxBuffer) {
+        myTrainData[myID].push(t);
+      } else {
+        myTrainData[myID][0].dispose(); myTrainData[myID].shift();
+        myTrainData[myID].push(t);
+      }
+      resolve();
+    };
+    img.onerror = () => {
+      myLog(`SD load: failed to decode ${path}`);
+      resolve();
+    };
+    img.src = 'data:image/jpeg;base64,' + b64;
+  });
+}
+
+function myClearImages(myID) {
+  if (!myTrainData[myID].length) { myLog(`Class ${myID}: already empty`); return; }
+  myTrainData[myID].forEach(t=>t.dispose()); myTrainData[myID]=[];
+  myRawData[myID]=[];
+  document.getElementById('myCount'+myID).innerHTML='0 samples';
+  myLog(`Class ${myID}: RAM cleared (disk/SD untouched)`);
+  myUpdateEpochHint();
+}
+
+async function mySaveImages(myID) {
+  const label = myGetLabels()[myID];
+  if (typeof JSZip==='undefined') { myLog('ERROR: JSZip not loaded'); return; }
+  const useRaw = myRawData[myID].length>0;
+  const cnt = useRaw ? myRawData[myID].length : myTrainData[myID].length;
+  if (!cnt) { myLog(`Class ${myID}: no images`); return; }
+  myLog(`Class ${myID}: saving ${cnt} images...`);
+  const zip = new JSZip();
+  const folder = zip.folder(label);
+  const ex = document.createElement('canvas'); ex.width=240; ex.height=240;
+  const exc = ex.getContext('2d');
+  let conv = 0;
+  for (let i=0;i<cnt;i++) {
+    try {
+      if (useRaw) exc.putImageData(myRawData[myID][i],0,0);
+      else {
+        const t=myTrainData[myID][i].squeeze([0]);
+        const sh=t.shape; const h=sh[0],w=sh[1],ch=sh[2]||1;
+        const px=await tf.tidy(()=>t.mul(255).clipByValue(0,255).cast('int32')).data();
+        t.dispose();
+        const tmp=document.createElement('canvas'); tmp.width=w; tmp.height=h;
+        const tc=tmp.getContext('2d'); const id=tc.createImageData(w,h);
+        for (let py=0;py<h;py++) for (let px2=0;px2<w;px2++) {
+          const si=(py*w+px2)*ch,di=(py*w+px2)*4;
+          id.data[di]=ch===1?px[si]:px[si]; id.data[di+1]=ch===1?px[si]:px[si+1]; id.data[di+2]=ch===1?px[si]:px[si+2]; id.data[di+3]=255;
+        }
+        tc.putImageData(id,0,0); exc.imageSmoothingEnabled=false; exc.drawImage(tmp,0,0,240,240);
+      }
+      const blob=await new Promise(r=>ex.toBlob(r,'image/jpeg',0.92));
+      folder.file(`img_${String(i+1).padStart(4,'0')}.jpg`,blob); conv++;
+    } catch(e) { myLog(`Skip img ${i+1}: ${e.message}`); }
+  }
+  if (!conv) { myLog('Nothing converted'); return; }
+  const zblob=await zip.generateAsync({type:'blob',compression:'STORE'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(zblob); a.download=`${label}_images.zip`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  myLog(`${label}_images.zip (${conv} images) — copy folder to SD /images/${label}/`);
+}
+
+// ─────────────────────────────────────────────────────────
+// SAVE CLASS IMAGES DIRECTLY TO ESP32 SD CARD VIA WEBSERIAL
+// Uses SD_JPEG_WRITE_START / SD_JPEG_CHUNK / SD_JPEG_WRITE_END protocol.
+// Images go to: /images/<ClassName>/img_NNNN.jpg
+// Requires esp_all_menu_image_train_infer68.ino firmware connected via WebSerial.
+// ─────────────────────────────────────────────────────────
+async function mySaveClassToSd(myID) {
+  if (!mySerialWriter) {
+    myLog('Not connected to ESP32 — connect WebSerial first');
+    return;
+  }
+  const label = myGetLabels()[myID];
+  const useRaw = myRawData[myID].length > 0;
+  const cnt = useRaw ? myRawData[myID].length : myTrainData[myID].length;
+  if (!cnt) { myLog(`Class ${myID}: no images to save`); return; }
+
+  const folderPath = '/images/' + label;
+  myLog(`Saving ${cnt} images to SD ${folderPath}/...`);
+  mySerialLog(`→ Saving class ${myID} (${label}) to SD`);
+
+  const ex = document.createElement('canvas'); ex.width = 240; ex.height = 240;
+  const exc = ex.getContext('2d');
+  let saved = 0;
+
+  for (let i = 0; i < cnt; i++) {
+    try {
+      // Render image onto 240x240 canvas
+      if (useRaw) {
+        exc.putImageData(myRawData[myID][i], 0, 0);
+      } else {
+        const t = myTrainData[myID][i].squeeze([0]);
+        const sh = t.shape; const h = sh[0], w = sh[1], ch = sh[2] || 1;
+        const px = await tf.tidy(() => t.mul(255).clipByValue(0, 255).cast('int32')).data();
+        t.dispose();
+        const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+        const tc = tmp.getContext('2d'); const id = tc.createImageData(w, h);
+        for (let py = 0; py < h; py++) for (let px2 = 0; px2 < w; px2++) {
+          const si = (py*w+px2)*ch, di = (py*w+px2)*4;
+          id.data[di]   = ch===1 ? px[si] : px[si];
+          id.data[di+1] = ch===1 ? px[si] : px[si+1];
+          id.data[di+2] = ch===1 ? px[si] : px[si+2];
+          id.data[di+3] = 255;
+        }
+        tc.putImageData(id, 0, 0);
+        exc.imageSmoothingEnabled = false;
+        exc.drawImage(tmp, 0, 0, 240, 240);
+      }
+
+      // Get JPEG blob
+      const blob = await new Promise(r => ex.toBlob(r, 'image/jpeg', 0.92));
+      const arrayBuf = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuf);
+
+      // Base64-encode the JPEG
+      let binary = '';
+      for (let b = 0; b < bytes.length; b++) binary += String.fromCharCode(bytes[b]);
+      const b64 = btoa(binary);
+
+      // Build the SD path: /images/ClassName/img_0001.jpg
+      const filename = `img_${String(i+1).padStart(4,'0')}.jpg`;
+      const sdPath = folderPath + '/' + filename;
+
+      // Send to ESP32 SD using chunked protocol
+      await myWriteSerial(`SD_JPEG_WRITE_START:${sdPath}:${bytes.length}\n`);
+      // Send in 60-char chunks to match ESP32 serial buffer expectations
+      const CHUNK = 60;
+      for (let pos = 0; pos < b64.length; pos += CHUNK) {
+        await myWriteSerial(`SD_JPEG_CHUNK:${b64.substring(pos, pos + CHUNK)}\n`);
+        // Small delay every 20 chunks to avoid overwhelming the ESP32 serial buffer
+        if ((pos / CHUNK) % 20 === 19) await new Promise(r => setTimeout(r, 10));
+      }
+      await myWriteSerial('SD_JPEG_WRITE_END\n');
+
+      saved++;
+      if (saved % 5 === 0 || saved === cnt) {
+        mySerialLog(`SD write: ${saved}/${cnt} — ${sdPath}`);
+      }
+      // Short pause between files to let ESP32 process the write
+      await new Promise(r => setTimeout(r, 50));
+
+    } catch(e) {
+      myLog(`SD save error (img ${i+1}): ${e.message}`);
+    }
+  }
+  myLog(`✓ Saved ${saved}/${cnt} images to SD card ${folderPath}/`);
+  mySerialLog(`→ SD save complete: ${saved}/${cnt} to ${folderPath}`);
+}
+
+async function mySaveAllImages() {
+  if (typeof JSZip==='undefined') { myLog('ERROR: JSZip not loaded'); return; }
+  const labels=myGetLabels();
+  const total = Array.from({length: myNumClasses}, (_, i) => myRawData[i] ? (myRawData[i].length || (myTrainData[i]||[]).length) : 0).reduce((a,b)=>a+b, 0);
+  if (!total) { myLog('No images collected'); return; }
+  const zip=new JSZip();
+  const ex=document.createElement('canvas'); ex.width=240; ex.height=240;
+  const exc=ex.getContext('2d');
+  let grand=0;
+  for (const id of Array.from({length: myNumClasses}, (_, i) => i)) {
+    const lbl=labels[id], useRaw=myRawData[id].length>0;
+    const cnt=useRaw?myRawData[id].length:myTrainData[id].length;
+    if (!cnt) { myLog(`Class ${id}: 0 — skipped`); continue; }
+    const folder=zip.folder(lbl); let conv=0;
+    for (let i=0;i<cnt;i++) {
+      try {
+        if (useRaw) exc.putImageData(myRawData[id][i],0,0);
+        else {
+          const t=myTrainData[id][i].squeeze([0]);
+          const sh=t.shape; const h=sh[0],w=sh[1],ch=sh[2]||1;
+          const px=await tf.tidy(()=>t.mul(255).clipByValue(0,255).cast('int32')).data();
+          t.dispose();
+          const tmp=document.createElement('canvas'); tmp.width=w; tmp.height=h;
+          const tc=tmp.getContext('2d'); const imgd=tc.createImageData(w,h);
+          for (let py=0;py<h;py++) for (let px2=0;px2<w;px2++) {
+            const si=(py*w+px2)*ch,di=(py*w+px2)*4;
+            imgd.data[di]=ch===1?px[si]:px[si]; imgd.data[di+1]=ch===1?px[si]:px[si+1]; imgd.data[di+2]=ch===1?px[si]:px[si+2]; imgd.data[di+3]=255;
+          }
+          tc.putImageData(imgd,0,0); exc.imageSmoothingEnabled=false; exc.drawImage(tmp,0,0,240,240);
+        }
+        const blob=await new Promise(r=>ex.toBlob(r,'image/jpeg',0.92));
+        folder.file(`img_${String(i+1).padStart(4,'0')}.jpg`,blob); conv++;
+      } catch(e) { myLog(`Skip cls ${id} img ${i+1}: ${e.message}`); }
+    }
+    myLog(`  Class ${id} (${lbl}): ${conv} images`); grand+=conv;
+  }
+  if (!grand) { myLog('Nothing to save'); return; }
+  const zblob=await zip.generateAsync({type:'blob',compression:'STORE'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(zblob); a.download='images.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  myLog(`images.zip — ${grand} images — unzip and copy folders to SD /images/`);
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 8 — MODEL SAVE / LOAD (TFJS FORMAT)
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+async function mySaveModel() {
+  if (!myModel) { myLog('No model yet'); return; }
+  await myModel.save('downloads://my-tfjs-model');
+  myLog('TFJS model saved');
+}
+
+async function myLoadModel() {
+  const inp=document.createElement('input'); inp.type='file'; inp.multiple=true;
+  inp.onchange=async(e)=>{
+    myModel=await tf.loadLayersModel(tf.io.browserFiles(e.target.files));
+    document.getElementById('myResolutionSelect').disabled = true;
+    document.getElementById('myResolutionCustom').disabled = true;
+    myUpdateResolutionHint();
+    myLog('TFJS model loaded — resolution locked. Click "Start Camera & Brain" to begin inference.');
+  };
+  inp.click();
+}
+
+// ─────────────────────────────────────────────────────────
+// LOAD myWeights.bin FROM SD CARD VIA WEBSERIAL
+// Reads /header/myWeights.bin from SD, parses the ASCII JSON
+// header, then reverses the ESP32 weight transposes to load
+// float32 values back into the live TFJS model.
+// ─────────────────────────────────────────────────────────
+async function myLoadWeightsBinFromSd() {
+  if (!mySerialWriter) { myLog('Not connected to ESP32 — connect WebSerial first'); return; }
+  if (!myModel)        { myLog('Start Camera & Brain first to build the model'); return; }
+
+  myLog('Requesting /header/myWeights.bin from SD...');
+  mySerialLog('→ SD_JPEG:/header/myWeights.bin  (reading as binary)');
+
+  // myWeights.bin is a binary file, but the SD browser already has an SD_READ path
+  // that returns text line-by-line. For a binary .bin we use a dedicated flag so
+  // the SD_CONTENT response is intercepted and treated as the weights payload.
+  myBinLoadLines = [];
+  myBinLoadActive = true;
+  await myWriteSerial('SD_READ:/header/myWeights.bin\n');
+}
+
+// Called from myHandleSerialData when SD_CONTENT_END fires with myBinLoadActive set.
+async function myApplyWeightsBin(lines) {
+  myBinLoadActive = false;
+  const text = lines.join('\n');
+
+  // ── Parse ASCII JSON header ──────────────────────────────────────────────
+  const beginIdx = text.indexOf('--- WEIGHTS HEADER BEGIN ---');
+  const endIdx   = text.indexOf('--- WEIGHTS HEADER END ---');
+  if (beginIdx < 0 || endIdx < 0) {
+    myLog('ERROR: myWeights.bin header sentinels not found — file corrupt or wrong file?');
+    return;
+  }
+  let hdr;
+  try {
+    const jsonStr = text.substring(text.indexOf('\n', beginIdx) + 1, endIdx).trim();
+    hdr = JSON.parse(jsonStr);
+  } catch(e) { myLog('ERROR: Could not parse weights header JSON: ' + e.message); return; }
+
+  myLog(`myWeights.bin header: inputSize=${hdr.inputSize} channels=${hdr.inputChannels} conv1F=${hdr.conv1Filters} conv2F=${hdr.conv2Filters}`);
+
+  // ── Validate against current model ──────────────────────────────────────
+  const inCh  = myIsGrayscaleMode ? 1 : 3;
+  const c2out = myGetConv2Out(myInputSize);
+  if (hdr.inputSize !== myInputSize || hdr.inputChannels !== inCh ||
+      hdr.conv1Filters !== 4 || hdr.conv2Filters !== 8 || hdr.numClasses !== myNumClasses) {
+    myLog('ERROR: Architecture mismatch between myWeights.bin and current model.');
+    myLog(`  .bin: inputSize=${hdr.inputSize} channels=${hdr.inputChannels}`);
+    myLog(`  model: inputSize=${myInputSize} channels=${inCh}`);
+    return;
+  }
+  if (hdr.quantization !== 'float32') {
+    myLog('ERROR: Only float32 weights supported for SD→TFJS load'); return;
+  }
+
+  // ── Extract binary payload (everything after the blank line post-header) ─
+  // SD_READ returns text; binary bytes arrive as raw chars via the serial line buffer.
+  // We locate the start of the binary section by byte offset in the raw text.
+  const headerText =
+    '--- WEIGHTS HEADER BEGIN ---\n' +
+    JSON.stringify(hdr) + '\n' +
+    '--- WEIGHTS HEADER END ---\n\n';
+  const enc = new TextEncoder();
+  const hdrByteLen = enc.encode(headerText).length;
+
+  // Re-encode the full text to bytes and slice off the header
+  const fullBytes = enc.encode(text);
+  if (fullBytes.length <= hdrByteLen) {
+    myLog('ERROR: myWeights.bin appears to have no binary payload after header');
+    return;
+  }
+  const binBytes = fullBytes.slice(hdrByteLen);
+  const dv = new DataView(binBytes.buffer, binBytes.byteOffset, binBytes.byteLength);
+
+  // ── Count expected floats ────────────────────────────────────────────────
+  const c1wLen = 9 * inCh * 4;          // 3x3 x inCh x 4 filters
+  const c1bLen = 4;
+  const c2wLen = 9 * 4 * 8;             // 3x3 x 4 x 8 filters
+  const c2bLen = 8;
+  const dwLen  = c2out * c2out * 8 * myNumClasses; // flattened x numClasses
+  const dbLen  = myNumClasses;
+  const totalFloats = c1wLen + c1bLen + c2wLen + c2bLen + dwLen + dbLen;
+
+  if (binBytes.byteLength < totalFloats * 4) {
+    myLog(`ERROR: Binary payload too short. Expected ${totalFloats*4}B, got ${binBytes.byteLength}B`);
+    return;
+  }
+
+  // ── Read floats in ESP32 order ───────────────────────────────────────────
+  let off = 0;
+  const readFloats = n => {
+    const arr = new Float32Array(n);
+    for (let i = 0; i < n; i++) { arr[i] = dv.getFloat32(off, true); off += 4; }
+    return arr;
+  };
+  const c1w_esp = readFloats(c1wLen);
+  const c1b_esp = readFloats(c1bLen);
+  const c2w_esp = readFloats(c2wLen);
+  const c2b_esp = readFloats(c2bLen);
+  const dw_esp  = readFloats(dwLen);
+  const db_esp  = readFloats(dbLen);
+
+  // ── Reverse conv1 transpose: ESP32 [f,ky,kx,ic] → TF [ky,kx,ic,f] ────────
+  function reverseConvTranspose(esp, ky, kx, inC, outC) {
+    const tf_arr = new Float32Array(esp.length);
+    for (let f=0;f<outC;f++) for (let r=0;r<ky;r++) for (let c=0;c<kx;c++) for (let ic=0;ic<inC;ic++) {
+      const di = r*kx*inC*outC + c*inC*outC + ic*outC + f;  // TF [ky,kx,ic,f]
+      const si = f*ky*kx*inC   + r*kx*inC   + c*inC  + ic;  // ESP32 [f,ky,kx,ic]
+      tf_arr[di] = esp[si];
+    }
+    return tf_arr;
+  }
+
+  // ── Reverse conv2 transpose: ESP32 [f,ic,ky,kx] → TF [ky,kx,ic,f] ────────
+  function reverseConv2Transpose(esp, ky, kx, inC, outC) {
+    const tf_arr = new Float32Array(esp.length);
+    for (let f=0;f<outC;f++) for (let ic=0;ic<inC;ic++) for (let r=0;r<ky;r++) for (let c=0;c<kx;c++) {
+      const di = r*kx*inC*outC + c*inC*outC + ic*outC + f;  // TF [ky,kx,ic,f]
+      const si = f*ky*kx*inC   + ic*ky*kx   + r*kx   + c;   // ESP32 [f,ic,ky,kx]
+      tf_arr[di] = esp[si];
+    }
+    return tf_arr;
+  }
+
+  // ── Reverse dense transpose: ESP32 [cls, f, y, x] → TF [f*y*x (CL), cls] ─
+  function reverseDenseTranspose(esp, outH, outW, numF, numC) {
+    const flatSize = outH * outW * numF;
+    const tf_arr = new Float32Array(esp.length);
+    for (let cls=0;cls<numC;cls++) for (let f=0;f<numF;f++) for (let y=0;y<outH;y++) for (let x=0;x<outW;x++) {
+      const flatCL = y*outW*numF + x*numF + f;               // channel-last flatten (TF)
+      const flatCF = f*outH*outW + y*outW + x;               // filter-first flatten (ESP32)
+      tf_arr[flatCL*numC + cls] = esp[cls*flatSize + flatCF];
+    }
+    return tf_arr;
+  }
+
+  const c1w_tf = reverseConvTranspose(c1w_esp, 3, 3, inCh, 4);
+  const c2w_tf = reverseConv2Transpose(c2w_esp, 3, 3, 4, 8);
+  const dw_tf  = reverseDenseTranspose(dw_esp, c2out, c2out, 8, myNumClasses);
+
+  // ── Set weights on live TFJS model ──────────────────────────────────────
+  try {
+    const wl = myModel.layers.filter(l => l.getWeights().length > 0);
+    if (wl.length < 3) { myLog('ERROR: Model does not have 3 weight layers'); return; }
+    const [conv1L, conv2L, denseL] = wl;
+    conv1L.setWeights([
+      tf.tensor4d(Array.from(c1w_tf), [3, 3, inCh, 4]),
+      tf.tensor1d(Array.from(c1b_esp))
+    ]);
+    conv2L.setWeights([
+      tf.tensor4d(Array.from(c2w_tf), [3, 3, 4, 8]),
+      tf.tensor1d(Array.from(c2b_esp))
+    ]);
+    denseL.setWeights([
+      tf.tensor2d(Array.from(dw_tf), [c2out * c2out * 8, myNumClasses]),
+      tf.tensor1d(Array.from(db_esp))
+    ]);
+    myLog(`✓ myWeights.bin loaded into TFJS model — labels: [${(hdr.labels||[]).join(', ')}]`);
+    myLog('  Model is ready for inference. Training will continue to refine these weights.');
+    // Apply class labels from the .bin header if present
+    if (Array.isArray(hdr.labels)) {
+      for (let i = 0; i < Math.min(hdr.labels.length, myNumClasses); i++) {
+        const el = document.getElementById('myLabel' + i);
+        if (el && hdr.labels[i]) el.value = hdr.labels[i];
+      }
+      myRefreshConfigTextarea();
+    }
+  } catch(e) {
+    myLog('ERROR setting weights on model: ' + e.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// LOAD myWeights.bin FROM PC FOLDER (File System Access API)
+// Reads project_folder/header/myWeights.bin directly as an
+// ArrayBuffer — avoids the text-encoding corruption that the
+// SD_READ serial path can suffer on raw binary data.
+//
+// Binary layout (matches myBuildWeightsBin / myExportBin):
+//   [ASCII text header between sentinel lines]
+//   --- WEIGHTS HEADER BEGIN ---
+//   {JSON}
+//   --- WEIGHTS HEADER END ---
+//   \n
+//   [raw float32 little-endian binary payload]
+//     conv1W  [f,ky,kx,ic]  → reversed to TF [ky,kx,ic,f]
+//     conv1B  [f]
+//     conv2W  [f,ic,ky,kx]  → reversed to TF [ky,kx,ic,f]
+//     conv2B  [f]
+//     denseW  [cls,flatCF]  → reversed to TF [flatCL, cls]
+//     denseB  [cls]
+// ─────────────────────────────────────────────────────────
+async function myLoadModelFromFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    myLog('File System Access API not supported — use Chrome or Edge'); return;
+  }
+  if (!myModel) {
+    myLog('Start Camera & Brain first to build the model, then load weights into it'); return;
+  }
+
+  // Use the already-chosen project folder, or ask the user to pick one
+  let rootDir = mySaveFolder;
+  if (!rootDir) {
+    try { rootDir = await window.showDirectoryPicker({ mode: 'read' }); }
+    catch(e) { if (e.name !== 'AbortError') myLog('Folder picker error: ' + e.message); return; }
+  }
+
+  // Navigate to header/myWeights.bin
+  let binFile;
+  try {
+    const headerDir = await rootDir.getDirectoryHandle('header', { create: false });
+    const fileHandle = await headerDir.getFileHandle('myWeights.bin', { create: false });
+    binFile = await fileHandle.getFile();
+  } catch(e) {
+    myLog('ERROR: Could not find header/myWeights.bin in ' + rootDir.name +
+          ' — export weights first or choose a different folder. (' + e.message + ')');
+    return;
+  }
+
+  myLog('Reading ' + rootDir.name + '/header/myWeights.bin  (' + binFile.size + ' bytes)...');
+
+  // Read the entire file as raw bytes
+  const arrayBuf = await binFile.arrayBuffer();
+  const allBytes  = new Uint8Array(arrayBuf);
+
+  // ── Locate the ASCII header sentinels ───────────────────────────────────
+  // We scan byte-by-byte for the two sentinel strings encoded as UTF-8.
+  const dec = new TextDecoder();
+
+  // Convert bytes to text ONLY for the header search (first ~500 bytes is enough)
+  // Use a safe slice so we don't decode garbage in the binary payload.
+  const headSearchLimit = Math.min(allBytes.length, 1024);
+  const headText = dec.decode(allBytes.slice(0, headSearchLimit));
+
+  const BEGIN_SEN = '--- WEIGHTS HEADER BEGIN ---';
+  const END_SEN   = '--- WEIGHTS HEADER END ---';
+  const beginIdx = headText.indexOf(BEGIN_SEN);
+  const endIdx   = headText.indexOf(END_SEN);
+  if (beginIdx < 0 || endIdx < 0) {
+    myLog('ERROR: myWeights.bin header sentinels not found — is this a valid myWeights.bin?');
+    return;
+  }
+
+  // Extract and parse the JSON from between the sentinels
+  let hdr;
+  try {
+    const jsonStr = headText.substring(headText.indexOf('\n', beginIdx) + 1, endIdx).trim();
+    hdr = JSON.parse(jsonStr);
+  } catch(e) {
+    myLog('ERROR: Could not parse weights header JSON: ' + e.message); return;
+  }
+  myLog('myWeights.bin header: inputSize=' + hdr.inputSize +
+        ' channels=' + hdr.inputChannels +
+        ' conv1F=' + hdr.conv1Filters +
+        ' conv2F=' + hdr.conv2Filters +
+        ' labels=[' + (hdr.labels || []).join(', ') + ']');
+
+  // ── Validate against current model ──────────────────────────────────────
+  const inCh  = myIsGrayscaleMode ? 1 : 3;
+  const c2out = myGetConv2Out(myInputSize);
+  if (hdr.inputSize !== myInputSize || hdr.inputChannels !== inCh ||
+      hdr.conv1Filters !== 4 || hdr.conv2Filters !== 8) {
+    myLog('ERROR: Architecture mismatch — cannot load these weights into the current model.');
+    myLog('  .bin: inputSize=' + hdr.inputSize + '  channels=' + hdr.inputChannels);
+    myLog('  model: inputSize=' + myInputSize + '  channels=' + inCh);
+    myLog('  Rebuild the model (refresh page) with matching settings, then load again.');
+    return;
+  }
+  if (hdr.quantization !== 'float32') {
+    myLog('ERROR: Only float32 weights are supported for PC folder → TFJS load'); return;
+  }
+
+  // ── Find the exact byte offset where the binary payload starts ──────────
+  // The header text ends with "--- WEIGHTS HEADER END ---\n\n"
+  // We find this in the raw bytes by scanning for the END sentinel + two newlines.
+  const endSenBytes = new TextEncoder().encode(END_SEN + '\n\n');
+  let payloadStart = -1;
+  outer: for (let i = 0; i <= allBytes.length - endSenBytes.length; i++) {
+    for (let j = 0; j < endSenBytes.length; j++) {
+      if (allBytes[i + j] !== endSenBytes[j]) continue outer;
+    }
+    payloadStart = i + endSenBytes.length;
+    break;
+  }
+  if (payloadStart < 0) {
+    myLog('ERROR: Could not locate binary payload start — header may be malformed'); return;
+  }
+
+  // ── Count expected float32 values ───────────────────────────────────────
+  const numClasses = myNumClasses;  // must match the built model
+  const c1wLen = 9 * inCh * 4;           // conv1 weights: 3x3 x inCh x 4 filters
+  const c1bLen = 4;                       // conv1 biases
+  const c2wLen = 9 * 4 * 8;              // conv2 weights: 3x3 x 4 x 8 filters
+  const c2bLen = 8;                       // conv2 biases
+  const dwLen  = c2out * c2out * 8 * numClasses;  // dense weights (flattened x numClasses)
+  const dbLen  = numClasses;              // dense biases
+  const totalFloats = c1wLen + c1bLen + c2wLen + c2bLen + dwLen + dbLen;
+  const expectedBytes = totalFloats * 4;
+  const availableBytes = allBytes.length - payloadStart;
+
+  if (availableBytes < expectedBytes) {
+    myLog('ERROR: Binary payload too short. Expected ' + expectedBytes + ' B, got ' + availableBytes + ' B');
+    myLog('  File may be truncated or exported from a different architecture.');
+    return;
+  }
+
+  // ── Read float32 values from the raw binary payload ──────────────────────
+  // Use the original ArrayBuffer slice so DataView reads correct little-endian floats.
+  const payloadView = new DataView(arrayBuf, payloadStart, expectedBytes);
+  let off = 0;
+  const readFloats = n => {
+    const arr = new Float32Array(n);
+    for (let i = 0; i < n; i++) { arr[i] = payloadView.getFloat32(off, true); off += 4; }
+    return arr;
+  };
+  const c1w_esp = readFloats(c1wLen);
+  const c1b_esp = readFloats(c1bLen);
+  const c2w_esp = readFloats(c2wLen);
+  const c2b_esp = readFloats(c2bLen);
+  const dw_esp  = readFloats(dwLen);
+  const db_esp  = readFloats(dbLen);
+
+  // ── Reverse ESP32 transposes back to TensorFlow.js layout ────────────────
+  // Conv1: ESP32 [f,ky,kx,ic]  → TF [ky,kx,ic,f]
+  function myRevConv1(esp, ky, kx, inC, outC) {
+    const tf_arr = new Float32Array(esp.length);
+    for (let f=0;f<outC;f++) for (let r=0;r<ky;r++) for (let c=0;c<kx;c++) for (let ic=0;ic<inC;ic++) {
+      const di = r*kx*inC*outC + c*inC*outC + ic*outC + f;
+      const si = f*ky*kx*inC   + r*kx*inC   + c*inC  + ic;
+      tf_arr[di] = esp[si];
+    }
+    return tf_arr;
+  }
+  // Conv2: ESP32 [f,ic,ky,kx]  → TF [ky,kx,ic,f]
+  function myRevConv2(esp, ky, kx, inC, outC) {
+    const tf_arr = new Float32Array(esp.length);
+    for (let f=0;f<outC;f++) for (let ic=0;ic<inC;ic++) for (let r=0;r<ky;r++) for (let c=0;c<kx;c++) {
+      const di = r*kx*inC*outC + c*inC*outC + ic*outC + f;
+      const si = f*ky*kx*inC   + ic*ky*kx   + r*kx   + c;
+      tf_arr[di] = esp[si];
+    }
+    return tf_arr;
+  }
+  // Dense: ESP32 [cls, flatCF(filter-first)]  → TF [flatCL(channel-last), cls]
+  function myRevDense(esp, outH, outW, numF, numC) {
+    const flatSize = outH * outW * numF;
+    const tf_arr = new Float32Array(esp.length);
+    for (let cls=0;cls<numC;cls++) for (let f=0;f<numF;f++) for (let y=0;y<outH;y++) for (let x=0;x<outW;x++) {
+      const flatCL = y*outW*numF + x*numF + f;           // channel-last index (TF)
+      const flatCF = f*outH*outW + y*outW + x;           // filter-first index (ESP32)
+      tf_arr[flatCL*numC + cls] = esp[cls*flatSize + flatCF];
+    }
+    return tf_arr;
+  }
+
+  const c1w_tf = myRevConv1(c1w_esp, 3, 3, inCh, 4);
+  const c2w_tf = myRevConv2(c2w_esp, 3, 3, 4, 8);
+  const dw_tf  = myRevDense(dw_esp, c2out, c2out, 8, numClasses);
+
+  // ── Apply weights to the live TFJS model ────────────────────────────────
+  try {
+    const wl = myModel.layers.filter(l => l.getWeights().length > 0);
+    if (wl.length < 3) { myLog('ERROR: Model does not have 3 weight layers'); return; }
+    const [conv1L, conv2L, denseL] = wl;
+    conv1L.setWeights([
+      tf.tensor4d(Array.from(c1w_tf), [3, 3, inCh, 4]),
+      tf.tensor1d(Array.from(c1b_esp))
+    ]);
+    conv2L.setWeights([
+      tf.tensor4d(Array.from(c2w_tf), [3, 3, 4, 8]),
+      tf.tensor1d(Array.from(c2b_esp))
+    ]);
+    denseL.setWeights([
+      tf.tensor2d(Array.from(dw_tf), [c2out * c2out * 8, numClasses]),
+      tf.tensor1d(Array.from(db_esp))
+    ]);
+    myLog('✓ myWeights.bin loaded from folder into TFJS model — labels: [' + (hdr.labels||[]).join(', ') + ']');
+    myLog('  Model is ready for inference. Training will continue to refine these weights.');
+    // Apply class labels from the .bin header if present
+    if (Array.isArray(hdr.labels)) {
+      for (let i = 0; i < Math.min(hdr.labels.length, myNumClasses); i++) {
+        const el = document.getElementById('myLabel' + i);
+        if (el && hdr.labels[i]) el.value = hdr.labels[i];
+      }
+      myRefreshConfigTextarea();
+    }
+  } catch(e) {
+    myLog('ERROR setting weights on model: ' + e.message);
+    console.error(e);
+  }
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 9 — CONFIG JSON BUILD & EXPORT
+     Builds the config.json object from UI fields, keeps the textarea
+     in sync, and exports to PC Downloads or directly to SD /header/.
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// CONFIG — BUILD CONFIG OBJECT FROM UI FIELDS
+// ─────────────────────────────────────────────────────────
+function myBuildConfigObj() {
+  const labels = myGetLabels();
+  const version = parseInt(document.getElementById('myBinVersion').value) || 50;
+  const lr      = parseFloat(document.getElementById('myLearningRate').value) || 0.00005;
+  const bs      = parseInt(document.getElementById('myBatchSize').value) || 12;
+  const ep      = parseFloat(document.getElementById('myTargetEpochs').value) || 30;
+  const useAug  = document.getElementById('myExportAugmentation').checked;
+  const useGray = document.getElementById('myExportGrayscale').checked;
+  const toPsram = document.getElementById('myExportImagesToPsram').checked;
+  const valImgs = parseInt(document.getElementById('myExportValidationImages').value) || 3;
+  return {
+    version:          version,
+    minVersion:       version,
+    inputSize:        myInputSize,
+    numClasses:       myNumClasses,
+    conv1Filters:     4,
+    conv2Filters:     8,
+    learningRate:     lr,
+    batchSize:        bs,
+    targetEpochs:     Math.ceil(ep),
+    thresholdPress:   1100,
+    thresholdRelease: 900,
+    screenTimeout:    300000,
+    weightsFile:      "myWeights.bin",
+    useAugmentation:  useAug,
+    useGrayscale:     useGray,
+    imagesToPsram:    toPsram,
+    validationImages: valImgs,
+    numLabels:        myNumClasses,
+    classLabels:      labels
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// CONFIG — SYNC TEXTAREA & EXPORT TO PC DOWNLOADS
+// ─────────────────────────────────────────────────────────
+function myRefreshConfigTextarea() {
+  const ta = document.getElementById('myConfigTextarea');
+  if (ta) ta.value = JSON.stringify(myBuildConfigObj(), null, 2);
+}
+
+async function myExportConfigJson() {
+  const ta = document.getElementById('myConfigTextarea');
+  const jsonText = ta ? ta.value : JSON.stringify(myBuildConfigObj(), null, 2);
+  try { JSON.parse(jsonText); }
+  catch(e) {
+    myLog('ERROR: Invalid JSON in config textarea — ' + e.message);
+    alert('Invalid JSON in config.json textarea.\n\nError: ' + e.message);
+    return;
+  }
+  const blob = new Blob([jsonText], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'config.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  myLog(`config.json saved to Downloads — copy to SD card: /header/config.json`);
+}
+
+// ─────────────────────────────────────────────────────────
+// SAVE config.json DIRECTLY TO SD CARD VIA WEBSERIAL (v70+)
+// Uses SD_TEXT_WRITE_START / SD_TEXT_CHUNK / SD_TEXT_WRITE_END —
+// the correct protocol for plain-text files (no base64 overhead,
+// no size limit from the old JPEG binary path).
+// Ensures /header/ directory exists first via SD_MKDIR.
+// ─────────────────────────────────────────────────────────
+async function myExportConfigJsonToSd() {
+  if (!mySerialWriter) { myLog('Not connected to ESP32 — connect WebSerial first'); return; }
+
+  const ta = document.getElementById('myConfigTextarea');
+  const jsonText = ta ? ta.value : JSON.stringify(myBuildConfigObj(), null, 2);
+  try { JSON.parse(jsonText); }
+  catch(e) {
+    myLog('ERROR: Invalid JSON in config textarea — ' + e.message);
+    alert('Invalid JSON in config.json textarea.\n\nError: ' + e.message);
+    return;
+  }
+
+  // Ensure /header/ directory exists before writing
+  await myEnsureSdDir('/header');
+  await mySendTextChunked('/header/config.json', jsonText, 'config.json');
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 10 — WEIGHTS BINARY EXPORT (myWeights.bin)
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// WEIGHTS BINARY — TRANSPOSE HELPERS
+// Reorder TensorFlow.js weight arrays into the layout
+// expected by the ESP32 C inference engine.
+// Conv1: TF [ky,kx,ic,f] → ESP32 [f,ky,kx,ic]
+// Conv2: TF [ky,kx,ic,f] → ESP32 [f,ic,ky,kx]
+// Dense: TF [flatCL,cls]  → ESP32 [cls,flatCF]
+// ─────────────────────────────────────────────────────────
+// Conv1 transpose: TF [ky,kx,ic,f] → ESP32 [f,ky,kx,ic]
+// ESP32 conv1 index: f*(9*ch) + ky*3*ch + kx*ch + ic  = [f,ky,kx,ic]
+function myTransposeConvWeights(data, ky, kx, inCh, outCh) {
+  const out=new Float32Array(data.length);
+  for (let f=0;f<outCh;f++) for (let r=0;r<ky;r++) for (let c=0;c<kx;c++) for (let ic=0;ic<inCh;ic++) {
+    const si=r*kx*inCh*outCh+c*inCh*outCh+ic*outCh+f;  // TF source [ky,kx,ic,f]
+    const di=f*ky*kx*inCh+r*kx*inCh+c*inCh+ic;          // ESP32 dest [f,ky,kx,ic]
+    out[di]=data[si];
+  }
+  return out;
+}
+
+// Conv2 transpose: TF [ky,kx,ic,f] → ESP32 [f,ic,ky,kx]
+// ESP32 conv2 index: f*36 + ic*9 + ky*3 + kx  = [f,ic,ky,kx]  ← different from conv1!
+function myTransposeConv2Weights(data, ky, kx, inCh, outCh) {
+  const out=new Float32Array(data.length);
+  for (let f=0;f<outCh;f++) for (let ic=0;ic<inCh;ic++) for (let r=0;r<ky;r++) for (let c=0;c<kx;c++) {
+    const si=r*kx*inCh*outCh+c*inCh*outCh+ic*outCh+f;  // TF source [ky,kx,ic,f]
+    const di=f*ky*kx*inCh+ic*ky*kx+r*kx+c;              // ESP32 dest [f,ic,ky,kx]
+    out[di]=data[si];
+  }
+  return out;
+}
+
+function myTransposeDenseWeights(data, outH, outW, numFilters, numClasses) {
+  const flatSize=outH*outW*numFilters;
+  const out=new Float32Array(data.length);
+  for (let cls=0;cls<numClasses;cls++) for (let f=0;f<numFilters;f++) for (let y=0;y<outH;y++) for (let x=0;x<outW;x++) {
+    const flatCL=y*outW*numFilters+x*numFilters+f;
+    const flatCF=f*outH*outW+y*outW+x;
+    out[cls*flatSize+flatCF]=data[flatCL*numClasses+cls];
+  }
+  return out;
+}
+
+async function myGetWeightLayers() {
+  if (!myModel) { myLog('ERROR: No model to export'); return null; }
+  const wl = myModel.layers.filter(l=>l.getWeights().length>0);
+  if (wl.length<3) { myLog('ERROR: Expected 3 weight layers, found '+wl.length); return null; }
+  const [conv1L,conv2L,denseL] = wl;
+  const [c1w,c1b] = conv1L.getWeights();
+  const [c2w,c2b] = conv2L.getWeights();
+  const [dw,db]   = denseL.getWeights();
+  const inCh = myIsGrayscaleMode ? 1 : 3;
+  const c2out = myGetConv2Out(myInputSize);
+  return {
+    conv1W: myTransposeConvWeights(await c1w.data(), 3, 3, inCh, 4),
+    conv1B: new Float32Array(await c1b.data()),
+    conv2W: myTransposeConv2Weights(await c2w.data(), 3, 3, 4, 8),
+    conv2B: new Float32Array(await c2b.data()),
+    denseW: myTransposeDenseWeights(await dw.data(), c2out, c2out, 8, myNumClasses),
+    denseB: new Float32Array(await db.data())
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// WEIGHTS BINARY — EXPORT TO PC DOWNLOADS
+// ─────────────────────────────────────────────────────────
+async function myExportBin() {
+  const built = await myBuildWeightsBin();
+  if (!built) return;
+  const { hdr, bin, version, inCh, labels } = built;
+  const blob = new Blob([hdr, bin], {type:'application/octet-stream'});
+
+  // Save to chosen project folder if set (mySaveFolder/header/myWeights.bin)
+  if (mySaveFolder) {
+    try {
+      const headerDir = await mySaveFolder.getDirectoryHandle('header', { create: true });
+      const fh = await headerDir.getFileHandle('myWeights.bin', { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      myLog(`myWeights.bin → ${mySaveFolder.name}/header/myWeights.bin  (version=${version} | channels=${inCh} | labels=[${labels.join(', ')}])`);
+      myLog(`  Also copy to SD card: /header/myWeights.bin`);
+      return;
+    } catch(e) { myLog('Folder save failed, falling back to Downloads: ' + e.message); }
+  }
+
+  // Fallback: browser Downloads
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'myWeights.bin';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  myLog(`myWeights.bin → PC Downloads — version=${version} | channels=${inCh} | labels=[${labels.join(', ')}]`);
+  myLog(`  Copy to SD card: /header/myWeights.bin`);
+}
+
+// ─────────────────────────────────────────────────────────
+// BUILD WEIGHTS BINARY — shared helper
+// Returns { hdr, bin, version, inCh, labels } or null.
+// ─────────────────────────────────────────────────────────
+async function myBuildWeightsBin() {
+  const weights = await myGetWeightLayers();
+  if (!weights) return null;
+  const labels  = myGetLabels();
+  const version = parseInt(document.getElementById('myBinVersion').value) || 50;
+  const inCh    = myIsGrayscaleMode ? 1 : 3;
+  const headerObj = {
+    version:       version,
+    inputSize:     myInputSize,
+    numClasses:    myNumClasses,
+    conv1Filters:  4,
+    conv2Filters:  8,
+    inputChannels: inCh,
+    quantization:  "float32",
+    labels:        labels
+  };
+  const headerText =
+    "--- WEIGHTS HEADER BEGIN ---\n" +
+    JSON.stringify(headerObj) + "\n" +
+    "--- WEIGHTS HEADER END ---\n\n";
+  const enc = new TextEncoder();
+  const hdr = enc.encode(headerText);
+  const nf  = weights.conv1W.length + weights.conv1B.length +
+              weights.conv2W.length + weights.conv2B.length +
+              weights.denseW.length + weights.denseB.length;
+  const bin = new Uint8Array(nf * 4);
+  const dv  = new DataView(bin.buffer);
+  let off = 0;
+  const wf = arr => { for (const v of arr) { dv.setFloat32(off,v,true); off+=4; } };
+  wf(weights.conv1W); wf(weights.conv1B);
+  wf(weights.conv2W); wf(weights.conv2B);
+  wf(weights.denseW); wf(weights.denseB);
+  return { hdr, bin, version, inCh, labels };
+}
+
+// ─────────────────────────────────────────────────────────
+// EXPORT myWeights.bin DIRECTLY TO SD CARD VIA WEBSERIAL
+// Sends to /header/myWeights.bin using the chunked protocol
+// SD_JPEG_WRITE_START / SD_JPEG_CHUNK / SD_JPEG_WRITE_END
+// (same protocol used to save training images to SD)
+// ─────────────────────────────────────────────────────────
+async function myExportBinToSd() {
+  if (!mySerialWriter) { myLog('Not connected to ESP32 — connect WebSerial first'); return; }
+  const built = await myBuildWeightsBin();
+  if (!built) return;
+  const { hdr, bin, version, inCh, labels } = built;
+
+  // Combine header + binary into one Uint8Array and base64-encode
+  const full = new Uint8Array(hdr.length + bin.length);
+  full.set(hdr, 0); full.set(bin, hdr.length);
+  let binary = '';
+  for (let i = 0; i < full.length; i++) binary += String.fromCharCode(full[i]);
+  const b64 = btoa(binary);
+
+  const sdPath = '/header/myWeights.bin';
+  const b64Len = b64.length;
+  const estRam = Math.ceil(full.length * 4 / 3);
+
+  myLog(`Sending myWeights.bin → SD ${sdPath}`);
+  myLog(`  Binary: ${full.length} B · Base64: ${b64Len} chars · ESP32 needs ~${(estRam/1024).toFixed(0)} KB heap`);
+  if (full.length > 30000) {
+    myLog('⚠ Large file — if ESP32 replies ERR:Not enough RAM, reduce model size or copy .bin to SD manually via Downloads button');
+  }
+
+  // Ensure /header/ directory exists — SD write fails silently if the dir is missing
+  await myEnsureSdDir('/header');
+
+  mySerialLog(`→ SD_JPEG_WRITE_START:${sdPath}:${full.length}`);
+  myLog(`Sending ${Math.ceil(b64Len/60)} chunks — watch Serial Monitor for ERR: lines...`);
+
+  const CHUNK = 60;
+  await myWriteSerial(`SD_JPEG_WRITE_START:${sdPath}:${full.length}\n`);
+  // Wait for OK:JPEG_WRITE_READY before flooding chunks
+  await new Promise(r => setTimeout(r, 100));
+  for (let pos = 0; pos < b64Len; pos += CHUNK) {
+    await myWriteSerial(`SD_JPEG_CHUNK:${b64.substring(pos, pos + CHUNK)}\n`);
+    if ((pos / CHUNK) % 20 === 19) await new Promise(r => setTimeout(r, 10));
+  }
+  await myWriteSerial('SD_JPEG_WRITE_END\n');
+  myLog('SD_JPEG_WRITE_END sent — waiting for OK:JPEG_WRITE_DONE or ERR: in Serial Monitor...');
+}
+
+// ─────────────────────────────────────────────────────────
+// BUILD myWeights.h — shared helper (v66+)
+// Generates the C header text that matches exactly what
+// the ESP32 firmware v66 myExportHeader() produces, so the
+// file is interchangeable whether generated on the ESP32 or
+// here in the browser.
+// Returns the header as a plain string, or null on error.
+// ─────────────────────────────────────────────────────────
+async function myBuildWeightsH() {
+  const weights = await myGetWeightLayers();
+  if (!weights) return null;
+
+  const labels  = myGetLabels();
+  const inCh    = myIsGrayscaleMode ? 1 : 3;
+  const c2out   = myGetConv2Out(myInputSize);
+  const version = parseInt(document.getElementById('myBinVersion').value) || 50;
+
+  // Helper: Float32Array → C initialiser lines, 8 values per line
+  function toCArray(name, arr) {
+    let s = `const float ${name}[] = {\n  `;
+    for (let i = 0; i < arr.length; i++) {
+      s += arr[i].toFixed(6) + 'f';
+      if (i < arr.length - 1) s += ', ';
+      if ((i + 1) % 8 === 0 && i < arr.length - 1) s += '\n  ';
+    }
+    return s + '\n};\n';
+  }
+
+  let txt = '';
+  txt += '#ifndef MY_WEIGHTS_H\n';
+  txt += '#define MY_WEIGHTS_H\n';
+  txt += '// ======================================================\n';
+  txt += '// Auto-generated by torchjs browser trainer (v66 format)\n';
+  txt += '// Copy this file to your sketch folder, then:\n';
+  txt += '//   1. Update numClasses and classLabels in the sketch to match training:\n';
+  txt += `//      numClasses = ${labels.length}\n`;
+  txt += `//      classLabels: ${labels.map(l => '"' + l + '"').join(', ')}\n`;
+  txt += `//      inputSize=${myInputSize}  conv1Filters=4  conv2Filters=8  channels=${inCh}\n`;
+  txt += '//   2. Uncomment:  #define USE_BAKED_WEIGHTS  at the top of the sketch\n';
+  txt += '//   3. Recompile and flash\n';
+  txt += `//      version=${version}\n`;
+  txt += '// ======================================================\n';
+
+  txt += toCArray('myModel_conv1_w', weights.conv1W);
+  txt += toCArray('myModel_conv1_b', weights.conv1B);
+  txt += toCArray('myModel_conv2_w', weights.conv2W);
+  txt += toCArray('myModel_conv2_b', weights.conv2B);
+  txt += toCArray('myModel_output_w', weights.denseW);
+  txt += toCArray('myModel_output_b', weights.denseB);
+  txt += '#endif // MY_WEIGHTS_H\n';
+
+  return txt;
+}
+
+// ─────────────────────────────────────────────────────────
+// EXPORT myWeights.h TO PC DOWNLOADS
+// ─────────────────────────────────────────────────────────
+async function myExportWeightsH() {
+  const txt = await myBuildWeightsH();
+  if (!txt) return;
+
+  // Save to chosen project folder if set (mySaveFolder/header/myWeights.h)
+  if (mySaveFolder) {
+    try {
+      const headerDir = await mySaveFolder.getDirectoryHandle('header', { create: true });
+      const fh = await headerDir.getFileHandle('myWeights.h', { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(new Blob([txt], { type: 'text/plain' }));
+      await writable.close();
+      myLog(`myWeights.h → ${mySaveFolder.name}/header/myWeights.h — copy to sketch folder and uncomment #define USE_BAKED_WEIGHTS`);
+      return;
+    } catch(e) { myLog('Folder save failed, falling back to Downloads: ' + e.message); }
+  }
+
+  // Fallback: browser Downloads
+  const blob = new Blob([txt], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'myWeights.h';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  myLog('myWeights.h → PC Downloads — copy to sketch folder and uncomment #define USE_BAKED_WEIGHTS');
+}
+
+// ─────────────────────────────────────────────────────────
+// EXPORT myWeights.h DIRECTLY TO SD CARD VIA WEBSERIAL (v70+)
+// Saves to /header/myWeights.h using SD_TEXT_WRITE_START /
+// SD_TEXT_CHUNK / SD_TEXT_WRITE_END — the correct protocol for
+// plain-text files.  No base64 overhead, no ESP32 heap limit
+// from accumulating the whole file as a base64 Arduino String.
+// ─────────────────────────────────────────────────────────
+async function myExportWeightsHToSd() {
+  if (!mySerialWriter) { myLog('Not connected to ESP32 — connect WebSerial first'); return; }
+  const txt = await myBuildWeightsH();
+  if (!txt) return;
+
+  const hBytes = new TextEncoder().encode(txt).length;
+  myLog(`Sending myWeights.h → SD /header/myWeights.h`);
+  myLog(`  Text: ${(hBytes/1024).toFixed(1)} KB · ${Math.ceil(hBytes/500)} chunks of 500 chars`);
+  if (hBytes > 80000) {
+    myLog('⚠ Very large file — if write fails, use "Export to PC Downloads" and copy manually.');
+  }
+
+  // Ensure /header/ directory exists before writing
+  await myEnsureSdDir('/header');
+  myLog('Sending SD_TEXT_WRITE_START — watch Serial Monitor for ERR: lines...');
+  await mySendTextChunked('/header/myWeights.h', txt, 'myWeights.h');
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 11 — LEGACY HEADER FILE EXPORT (.h)
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+async function myExportHeader() {
+  if (!myModel) { myLog('Error: no model to export'); return; }
+  const isInt8 = document.getElementById('myInt8Toggle').checked;
+  const isGray = document.getElementById('myGrayscaleToggle').checked;
+  if (isGray && !myIsGrayscaleMode) {
+    alert('Model was trained in RGB mode. Export as RGB or retrain in grayscale.');
+    document.getElementById('myGrayscaleToggle').checked=false; return;
+  }
+  myLog(`Generating ${isInt8?'Int8':'Float32'} ${isGray?'Grayscale':'RGB'} header...`);
+  const labels = myGetLabels().map(toCString);
+  let txt = `// Overflow-Protected 2-Layer CNN Model with Labels\n#ifndef MY_MODEL_H\n#define MY_MODEL_H\n\n`;
+  txt += `const char* myClassLabels[${myNumClasses}] = {\n`;
+  labels.forEach((l, i) => { txt += `  "${l}"${i < labels.length-1 ? ',' : ''}\n`; });
+  txt += `};\n\n`;
+  if (isInt8) txt += `#define USE_INT8_MODE\n`;
+  if (isGray) txt += `#define USE_GRAYSCALE_MODE\n`;
+  txt += `\n`;
+  const names = ["myConv1_w","myConv1_b","myConv2_w","myConv2_b","myOutput_w","myOutput_b"];
+  let ni = 0;
+  for (const l of myModel.layers) {
+    if (!l.getWeights().length) continue;
+    for (const w of l.getWeights()) {
+      let d = Array.from(await w.data());
+      const maxAbs = Math.max(...d.map(Math.abs));
+      if (maxAbs>10) { myLog(`WARNING: large weights (${maxAbs.toFixed(2)}), clipping`); d=d.map(v=>Math.max(-10,Math.min(10,v))); }
+      if (isInt8) {
+        const scale = 127/(maxAbs||1);
+        txt += `const float ${names[ni]}_scale = ${scale.toFixed(6)}f;\n`;
+        txt += `const int8_t ${names[ni]}[] = { ${d.map(v=>Math.round(v*scale)).join(', ')} };\n\n`;
+      } else {
+        txt += `const float ${names[ni]}[] = { ${d.map(v=>v.toFixed(6)).join(', ')} };\n\n`;
+      }
+      ni++;
+    }
+  }
+  txt += `#endif`;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([txt]));
+  a.download=(document.getElementById('myExportName').value||'myModel')+'.h';
+  a.click();
+  myLog(`Header exported: ${a.download}`);
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 12 — SOURCE CODE EDITOR
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+var myEditorOpen = false;
+function myToggleEditor() {
+  const ta = document.getElementById('myTextarea1');
+  const btn = document.getElementById('myUpdateBtn');
+  if (!myEditorOpen) {
+    ta.value = document.getElementById('myCodeSpace').innerHTML;
+    ta.rows = 30;
+    ta.style.display = 'block';
+    btn.style.display = 'inline-block';
+    myEditorOpen = true;
+  } else {
+    ta.style.display = 'none';
+    btn.style.display = 'none';
+    myEditorOpen = false;
+  }
+}
+function myApplyAndRun() {
+  document.getElementById('myCodeSpace').innerHTML = document.getElementById('myTextarea1').value;
+  myLog('Code updated & restarting...');
+  myStartAll();
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SCRIPT SECTION 13 — FLASH FIRMWARE
+     Uses esptool-js v0.5.7 (dynamic import from unpkg CDN) to flash
+     ESP32 .bin files directly from the browser over WebSerial.
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+function mySelFlash(mode) {
+  myFlashMode = mode;
+  document.getElementById('myOptA').className = 'myFlashOption' + (mode === 'A' ? ' myFlashSel' : '');
+  document.getElementById('myOptB').className = 'myFlashOption' + (mode === 'B' ? ' myFlashSel' : '');
+  document.getElementById('myInputsA').style.display = mode === 'A' ? 'block' : 'none';
+  document.getElementById('myInputsB').style.display = mode === 'B' ? 'block' : 'none';
+}
+
+async function myFileToBinaryString(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const ua = new Uint8Array(fr.result);
+      let str = '';
+      for (let i = 0; i < ua.length; i += 65536) {
+        str += String.fromCharCode(...ua.subarray(i, Math.min(i + 65536, ua.length)));
+      }
+      resolve(str);
+    };
+    fr.onerror = reject;
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+async function myFlashFw() {
+  const sts  = document.getElementById('myFlashSts');
+  const bar  = document.getElementById('myProgBar');
+  const wrap = document.getElementById('myProgWrap');
+  sts.style.color = '#555';
+  sts.textContent = '';
+  wrap.style.display = 'block';
+  bar.style.width = '0%';
+  bar.style.background = '#0088cc';
+
+  async function myResolveFile(fileInput, defaultName, address) {
+    const userFile = fileInput.files[0];
+    if (userFile) return { file: userFile, address };
+    sts.textContent = `⏳ Loading default: ${defaultName}...`;
+    const resp = await fetch(defaultName);
+    if (!resp.ok) throw new Error(
+      `Cannot load "${defaultName}" (HTTP ${resp.status}). ` +
+      `Place the .bin file alongside this HTML file, or use Browse to select it.`
+    );
+    const blob = await resp.blob();
+    return { file: new File([blob], defaultName, { type: 'application/octet-stream' }), address };
+  }
+
+  let fileObjects = [];
+  try {
+    if (myFlashMode === 'A') {
+      fileObjects = [await myResolveFile(
+        document.getElementById('myFSketch'),
+        myFlashSketchFile,
+        parseInt(document.getElementById('myASketch').value)
+      )];
+    } else {
+      fileObjects = [await myResolveFile(
+        document.getElementById('myFMerged'),
+        myFlashMergedFile,
+        parseInt(document.getElementById('myAMerged').value)
+      )];
+    }
+  } catch (e) {
+    sts.style.color = 'red';
+    sts.textContent = `✗ ${e.message}`;
+    myLog(`Flash load error: ${e.message}`);
+    wrap.style.display = 'none';
+    return;
+  }
+
+  sts.textContent = '⏳ Loading esptool-js v0.5.7...';
+  try {
+    const { ESPLoader, Transport } = await import('https://unpkg.com/esptool-js@0.5.7/bundle.js');
+
+    let flashPort = mySerialPort;
+    if (mySerialConnected) {
+      sts.textContent = '⏳ Releasing serial monitor...';
+      myLog('Releasing serial monitor for flash...');
+      try { await mySerialReader.cancel(); mySerialReader.releaseLock(); } catch {}
+      try { mySerialWriter.releaseLock(); } catch {}
+      try { await mySerialPort.close(); } catch {}
+      mySerialConnected = false;
+      mySerialReader = null; mySerialWriter = null;
+      document.getElementById('mySerialStatus').textContent = 'Not Connected (released for flash)';
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    if (!flashPort) {
+      sts.textContent = '⏳ Select the ESP32 serial port...';
+      try {
+        flashPort = await navigator.serial.requestPort();
+        mySerialPort = flashPort;
+      } catch (e) {
+        sts.textContent = '⚠ Port selection cancelled';
+        myLog('Flash cancelled — no port selected');
+        wrap.style.display = 'none';
+        return;
+      }
+    }
+
+    sts.textContent = '⏳ Reading firmware file...';
+    bar.style.width = '5%';
+    const fileArray = await Promise.all(fileObjects.map(async fo => ({
+      data:    await myFileToBinaryString(fo.file),
+      address: fo.address
+    })));
+    bar.style.width = '15%';
+
+    const transport = new Transport(flashPort, true);
+    const loader = new ESPLoader({
+      transport,
+      baudrate: 921600,
+      terminal: {
+        clean:     ()  => {},
+        writeLine: l   => myLog(l),
+        write:     c   => myLog(c)
+      }
+    });
+
+    sts.textContent = '⏳ Connecting to chip (hold BOOT button if needed)...';
+    bar.style.width = '20%';
+    const chip = await loader.main();
+    myLog(`Chip: ${chip}`);
+    bar.style.width = '30%';
+
+    await loader.writeFlash({
+      fileArray,
+      flashSize: 'keep',
+      flashFreq: '80m',
+      flashMode: 'dio',
+      eraseAll:  false,
+      compress:  true,
+      reportProgress(i, written, total) {
+        bar.style.width = (30 + Math.floor(written / total * 65)) + '%';
+        sts.textContent = `Flashing ${i + 1}/${fileArray.length}: ${Math.floor(written / total * 100)}%`;
+      }
+    });
+
+    bar.style.width = '100%';
+    sts.style.color = 'green';
+    sts.textContent = '✓ Flash complete — device restarting';
+    myLog('⚡ Flash successful');
+
+    try {
+      if (typeof loader.after === 'function') await loader.after('hard_reset');
+    } catch (e) { myLog(`Reset note: ${e.message}`); }
+    await transport.disconnect();
+
+    sts.textContent = '✓ Done — reconnecting serial monitor in 3s...';
+    setTimeout(async () => {
+      try {
+        await mySerialPort.open({ baudRate: 115200 });
+        const encoder = new TextEncoderStream();
+        encoder.readable.pipeTo(mySerialPort.writable);
+        mySerialWriter = encoder.writable.getWriter();
+        const decoder = new TextDecoderStream();
+        mySerialPort.readable.pipeTo(decoder.writable);
+        mySerialReader = decoder.readable.getReader();
+        mySerialConnected = true;
+        document.getElementById('mySerialStatus').textContent = '✓ Connected';
+        document.getElementById('mySerialStatus').style.color = 'green';
+        myLog(`Serial monitor reconnected @ 115200 baud`);
+        mySerialReadLoop();
+      } catch (e) {
+        myLog(`Auto-reconnect failed: ${e.message} — press Connect manually`);
+      }
+    }, 3000);
+
+  } catch (e) {
+    bar.style.background = 'red';
+    sts.style.color = 'red';
+    sts.textContent = `✗ ${e.message}`;
+    myLog(`Flash error: ${e.message}`);
+  }
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     INIT — runs once on page load
+     Populates camera dropdown, resolution hint, config textarea,
+     attaches live-update listeners, checks WebSerial support.
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+// Helper: populate (or refresh) webcam options in the camera dropdown.
+// Called at init AND after getUserMedia succeeds (permission grants reveal real deviceIds).
+async function myPopulateCameraOptions() {
+  const sel = document.getElementById('myCameraSelect');
+  const espOpt = document.getElementById('opt-esp32-serial'); // preserve if present
+  const prevVal = sel.value;
+
+  // Remove all non-ESP32 options
+  Array.from(sel.options).forEach(o => { if (o.id !== 'opt-esp32-serial') o.remove(); });
+
+  // Re-add webcam options
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  devices.filter(d => d.kind === 'videoinput').forEach((d, i) => {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.text  = d.label || `Camera ${i + 1}`;
+    sel.appendChild(o);
+  });
+
+  // Restore previous selection if still valid, otherwise pick first available
+  const stillValid = Array.from(sel.options).some(o => o.value === prevVal);
+  if (stillValid) sel.value = prevVal;
+  else if (sel.options.length > 0) sel.value = sel.options[0].value;
+}
+
+(async function init() {
+  await myPopulateCameraOptions();
+
+  // Render the dynamic class rows (default 3 classes)
+  myRenderClassRows();
+
+  // Listen for camera source changes
+  document.getElementById('myCameraSelect').addEventListener('change', myOnCameraSourceChange);
+
+  myUpdateResolutionHint();
+  myRefreshConfigTextarea();
+  myUpdateMaxBuffer();   // set RAM hint on load
+
+  // Keep config textarea in sync when training fields change
+  // Note: myLabel inputs are handled inside myRenderClassRows() since they're dynamic
+  ['myLearningRate','myBatchSize','myTargetEpochs',
+   'myExportValidationImages'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', myRefreshConfigTextarea);
+  });
+
+  if (!('serial' in navigator)) {
+    const notice = document.getElementById('mySerialStatus');
+    notice.textContent = 'WebSerial not supported (use Chrome/Edge)';
+    notice.style.color = 'red';
+  }
+})();
+
+
+async function myUpdateConfusionMatrix() {
+  if (!myModel) {
+    myLog("No model found. Please start the brain first.");
+    return;
+  }
+
+  const labels = myGetLabels();
+  const numClasses = labels.length;
+  
+  // 1. Initialize the matrix with zeros
+  let matrix = Array.from({ length: numClasses }, () => Array(numClasses).fill(0));
+
+  myLog("Calculating confusion matrix (converting ImageData to Tensors)...");
+  
+  for (let actualClass = 0; actualClass < numClasses; actualClass++) {
+    const samples = myRawData[actualClass]; // These are ImageData objects
+    if (!samples || samples.length === 0) {
+      console.log(`Skipping class ${actualClass}: No samples found.`);
+      continue;
+    }
+
+    // 2. Process samples in a tidy block to prevent memory leaks
+    await tf.tidy(() => {
+      // Convert the array of ImageData objects into an array of Tensors
+      const tensorArray = samples.map(imgData => {
+        // Convert raw pixels to tensor
+        let t = tf.browser.fromPixels(imgData); 
+        
+        // Resize to match your model's input (e.g., 64x64 or 96x96)
+        t = tf.image.resizeNearestNeighbor(t, [myInputSize, myInputSize]);
+        
+        // Convert to grayscale if your model requires it
+        if (myIsGrayscaleMode) {
+          t = t.mean(2).expandDims(-1);
+        }
+        
+        // Normalize 0-255 to 0-1 range
+        return t.div(255.0);
+      });
+
+      // 3. Stack and Predict
+      const batchTensor = tf.stack(tensorArray);
+      const prediction = myModel.predict(batchTensor);
+      const predictedClasses = prediction.argMax(-1).dataSync();
+
+      // 4. Populate matrix
+      predictedClasses.forEach(predClass => {
+        matrix[actualClass][predClass]++;
+      });
+    });
+  }
+
+  // Final step: render the table to the UI
+  myRenderConfusionMatrix(matrix, labels);
+}
+
+function myRenderConfusionMatrix(matrix, labels) {
+  const container = document.getElementById('myConfusionMatrixContainer');
+  let html = `<table border="1" style="border-collapse: collapse; text-align: center;">`;
+  
+  // Header row (Predicted labels)
+  html += `<tr><td style="border:none;"></td><td colspan="${labels.length}" style="background:#eee;"><b>Predicted</b></td></tr>`;
+  html += `<tr><td style="background:#eee; padding:5px;"><b>Actual</b></td>`;
+  labels.forEach(l => html += `<td style="padding:5px; background:#f9f9f9;"><b>${l}</b></td>`);
+  html += `</tr>`;
+
+  // Data rows
+  matrix.forEach((row, i) => {
+    html += `<tr><td style="background:#f9f9f9; padding:5px;"><b>${labels[i]}</b></td>`;
+    row.forEach((count, j) => {
+      // Highlight the diagonal (correct predictions)
+      const bgColor = (i === j) ? '#e6ffed' : (count > 0 ? '#ffeef0' : '#fff');
+      html += `<td style="padding:10px; background:${bgColor};">${count}</td>`;
+    });
+    html += `</tr>`;
+  });
+
+  html += `</table>`;
+  container.innerHTML = html;
+  myLog("Confusion Matrix updated.");
+}
+
+
+
+
+</script>
+
+</body>
+</html>
