@@ -4,6 +4,8 @@
 
 Note: Main Demo at [https://webmcu-ai.github.io/webmcu-vision-web/index.html](https://webmcu-ai.github.io/webmcu-vision-web/index.html)
 
+Use this link for the latest. Change ## [https://webmcu-ai.github.io/webmcu-vision-web/drafts/torchjs1##.html](https://webmcu-ai.github.io/webmcu-vision-web/drafts/torchjs1##.html)
+
 
 
 ## Update list for this page with a mention for the main page
