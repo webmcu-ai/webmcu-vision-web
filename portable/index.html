@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <title>XIAO ML Kit Training over WebSerial. v122</title>
+
+<!-- Following script tags needed to make this fully portable -->
+  
 <script src=".\tfjs.js"></script>
 <script src=".\jszip.min.js"></script>
 <script src=".\esptool-js.js"></script>
@@ -18,6 +21,28 @@ to make this file portable I have changed these lines
   const { ESPLoader, Transport } = await import('https://unpkg.com/esptool-js@0.5.7/bundle.js');  
   changed to 
       const { ESPLoader, Transport } = await import('./esptool-js.js');
+
+and I changed in the file   esptool-js.js
+
+  export{Fe as ClassicReset,Pe as CustomReset,Ai as ESPLoader,Te as HardReset,pe as ROM,Me as Transport,fe as UsbJtagSerialReset,ue as decodeBase64Data,Oe as getStubJsonByChipName,Ue as validateCustomResetStringSequence};
+
+
+  to for regular webpage loading
+
+  window.esptool = {
+    ClassicReset: Fe,
+    CustomReset: Pe,
+    ESPLoader: Ai,
+    HardReset: Te,
+    ROM: pe,
+    Transport: Me,
+    UsbJtagSerialReset: fe,
+    decodeBase64Data: ue,
+    getStubJsonByChipName: Oe,
+    validateCustomResetStringSequence: Ue
+};
+
+  
 -->
   
 <style>
