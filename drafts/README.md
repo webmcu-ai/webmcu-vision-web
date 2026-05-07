@@ -9,7 +9,7 @@ Use this link for the latest. Change ## [https://webmcu-ai.github.io/webmcu-visi
 
 
 ## Update list for this page with a mention for the main page
-1. May 5th 2026,  testing: torchjs141.html and esp32_on_device_78.txt replaced: firmware.ino including flash.ino.bin and flash.ino.merge.bin in drafts folder only for testing <br><br>
+1. May 7th 2026,  testing: torchjs141.html and esp32_on_device_78.txt replaced: firmware.ino including flash.ino.bin and flash.ino.merge.bin in drafts folder only for testing <br><br>
 1. May 5th 2026,  testing: torchjs133.html-torchjs135.html and esp32_on_device_78.txt replaced: firmware.ino including flash.ino.bin and flash.ino.merge.bin in drafts folder only for testing <br><br>
 1. May 4th 2026,  testing: torchjs131.html and esp32_on_device_78.txt Trying to save files to the esp32 from the PC <br><br>
 1. May 1st 2026, things are looking better. I am presently testing: torchjs127-130.html and esp32_on_device_76-77.txt (testing with broken hardware, very irritating) <br><br>
