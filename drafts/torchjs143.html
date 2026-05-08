@@ -411,7 +411,16 @@ Every Capture saves to <code>images/ClassName/img_NNNN.jpg</code>.</small><br><b
   <b>Clear RAM</b> = frees tensors only (disk and SD untouched)
 </p>
 
-<br><br>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     ACTIVITY LOG — placed here for easy access alongside training
+═══════════════════════════════════════════════════════════════════ -->
+<h3>Activity Log</h3>
+<div id="myDivHistory" style="height:200px; overflow-y:auto; font-family:monospace; background:#eee; padding:8px; font-size:0.85em;">Logs will appear here...</div>
+<button onclick="document.getElementById('myDivHistory').innerHTML=''">Clear Log</button>
+
+<br>
 
 </td><td>
 
@@ -546,15 +555,6 @@ Manual <b>Export myWeights.bin</b> and <b>Export myWeights.h</b> buttons always 
 
 
 
-
-<!-- ═══════════════════════════════════════════════════════════════════
-     ACTIVITY LOG — placed here for easy access alongside training
-═══════════════════════════════════════════════════════════════════ -->
-<h3>Activity Log</h3>
-<div id="myDivHistory" style="height:200px; overflow-y:auto; font-family:monospace; background:#eee; padding:8px; font-size:0.85em;">Logs will appear here...</div>
-<button onclick="document.getElementById('myDivHistory').innerHTML=''">Clear Log</button>
-
-<br>
 
 </td></tr>
 
