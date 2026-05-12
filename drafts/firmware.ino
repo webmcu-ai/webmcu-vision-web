@@ -244,6 +244,7 @@
 #include "mbedtls/base64.h"
 
 U8G2_SSD1306_72X40_ER_1_HW_I2C u8g2(U8G2_R2, U8X8_PIN_NONE);
+//U8G2_SSD1306_72X40_ER_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 // ======================================================
 // COMPILED-IN DEFAULTS
@@ -856,7 +857,7 @@ void setup() {
   // v66: restore horizontal mirror (corrects left/right flip for typical mounting)
   sensor_t* s = esp_camera_sensor_get();
   if (s != nullptr) {
-    // s->set_vflip(s, 1);   // uncomment if image appears upside-down
+    s->set_vflip(s, 1);   // uncomment if image appears upside-down
     s->set_hmirror(s, 1);    // mirror horizontally
   }
 
