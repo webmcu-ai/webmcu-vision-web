@@ -10,6 +10,7 @@ Use this link for the latest. Change ## [https://webmcu-ai.github.io/webmcu-visi
 
 ## Update list for this page with a mention for the main page
 
+1. May 12, 2026   torchjs145.html fixing validation issue <br><br>
 1. May 12, 2026   esp32_on_device_79.txt fixing orientation issue with torchjs144.html Testing if ready to merge with the main page. <br><br>
 1. May 8th 2026,   torchjs142.html trying to fix a few memory leaks<br><br>
 1. May 7th 2026,  testing: torchjs141.html and esp32_on_device_78.txt replaced: firmware.ino including flash.ino.bin and flash.ino.merge.bin in drafts folder only for testing <br><br>
