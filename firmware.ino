@@ -1,6 +1,29 @@
 // ======================================================
 // XIAO ML KIT (OR XIAO ESP32S3 SENSE)
-// FULL VISION ML  — v70
+// FULL VISION ML  — v78
+//
+// v78: binary file transfer protocol (PC → SD card):
+//   - FILE_SEND_START:/path:totalBytes  — open file for binary write, reply OK:FILE_READY
+//   - FILE_CHUNK:<idx>:<checksum>:<hex-data>  — receive 256 raw bytes as 512 hex chars
+//     Checksum = XOR of all bytes in chunk (8-bit, sent as 2 hex chars).
+//     Reply OK:CHUNK_ACK:<idx>  or  ERR:CHUNK_RETRY:<idx>:<reason>
+//   - FILE_SEND_END:<totalBytes>  — close file, verify byte count
+//     Reply OK:FILE_DONE:/path:totalBytes  or  ERR:FILE_SIZE_MISMATCH
+//   - State vars: myFileRecvPath, myFileRecvHandle, myFileRecvBytes, myFileRecvActive
+//   - Parent directories created recursively (reuses myEnsureParentDir)
+//   - Works for .jpg, .bin, .h, .json — all written as raw binary
+//   - STATUS updated to list FILE_SEND_START/CHUNK/END
+//
+// v77: (placeholder — keep numbering)
+//
+// v76: dynamic menu (fresh from v69 — minimum changes only):
+//   - #define myTotalItems (myCfg.numClasses + 2)  replaces const int = 5
+//   - myDispatchByIndex(idx): replaces 3 hardcoded if/else dispatch chains
+//   - Number-key range extended to '1'-'9' (was '1'-'6')
+//   - myDrawMenu Serial hint: dynamic printf (was hardcoded string)
+//   - myDrawMenu startItem: max(1,min(idx-1,total-2)) centres selection
+//   - All other code IDENTICAL to v69
+//
 //
 // v70 additions over v66 (WebSerial multi-file save fixes):
 //   - Serial line buffer raised from 512 → 4096 bytes; silent discard replaced
@@ -20,7 +43,7 @@
 //     SD_MKDIR, SD_JPEG, SD_HEAD) — returns ERR:SD not available immediately
 //     rather than a confusing "Cannot open/create" error.
 //   - STATUS response updated: lists SD_TEXT_WRITE_START/CHUNK/END; version
-//     string bumped to esp32-on-device-70.
+//     string bumped to esp32-on-device-76.
 //
 //   - myWeightsTrained flag restored: set true on successful myLoadWeights() and
 //     on normal/early-save training completion; guards inference against untrained
@@ -221,6 +244,7 @@
 #include "mbedtls/base64.h"
 
 U8G2_SSD1306_72X40_ER_1_HW_I2C u8g2(U8G2_R2, U8X8_PIN_NONE);
+//U8G2_SSD1306_72X40_ER_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 // ======================================================
 // COMPILED-IN DEFAULTS
@@ -480,7 +504,7 @@ void mySyncLegacyVars() {
 // UI PARAMETERS
 // ======================================================
 //const int myTotalItems = 6;   // v59: +1 for WebStream
-const int myTotalItems = 5;   // WebStream is serial-only (key '6'), not in OLED menu
+#define myTotalItems (myCfg.numClasses + 2)  // v76: dynamic — adapts to numClasses
 
 #define myThresholdPress   (myCfg.thresholdPress)
 #define myThresholdRelease (myCfg.thresholdRelease)
@@ -550,6 +574,15 @@ bool   myJpegWriteActive = false;        // true = collecting SD_JPEG_CHUNK line
 String myTextWritePath    = "";          // destination path on SD card
 String myTextWriteContent = "";          // accumulated text content
 bool   myTextWriteActive  = false;       // true = collecting SD_TEXT_CHUNK lines
+
+// v78: binary file receive state (FILE_SEND_START / FILE_CHUNK / FILE_SEND_END)
+// Receives raw binary files from the PC webpage over WebSerial.
+// Each chunk = up to 256 bytes encoded as hex, verified by XOR checksum.
+// Handshake: ESP32 sends OK:CHUNK_ACK per chunk; PC waits before next chunk.
+String myFileRecvPath    = "";   // destination path on SD card
+File   myFileRecvHandle;         // open SD file (kept open across chunks)
+long   myFileRecvBytes   = 0;    // bytes written so far
+bool   myFileRecvActive  = false; // true = receiving chunks
 
 // ======================================================
 // XIAO ESP32-S3 CAMERA PINS
@@ -738,6 +771,7 @@ void myActionWebStream();
 void myResetMenuState();
 void myHandleMenuNavigation();
 void myDrawMenu();
+void myDispatchByIndex(int idx);
 void myDispatchMenuCmd(const String& cmd);
 void myHandleStringCommand(const String& cmd);
 void mySdListDir(const String& path);
@@ -757,7 +791,7 @@ void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 3000);
   delay(1000);
-  Serial.println("\n=== XIAO ESP32-S3 ML System Starting (v66) ===");
+  Serial.println("\n=== XIAO ESP32-S3 ML System Starting (v76) ===");
   Serial.printf("Free heap:  %d bytes\n", ESP.getFreeHeap());
   Serial.printf("Free PSRAM: %d bytes\n", ESP.getFreePsram());
 
@@ -823,7 +857,7 @@ void setup() {
   // v66: restore horizontal mirror (corrects left/right flip for typical mounting)
   sensor_t* s = esp_camera_sensor_get();
   if (s != nullptr) {
-    // s->set_vflip(s, 1);   // uncomment if image appears upside-down
+    s->set_vflip(s, 1);   // uncomment if image appears upside-down
     s->set_hmirror(s, 1);    // mirror horizontally
   }
 
@@ -2569,14 +2603,14 @@ void myDrawMenu() {
     else if (i == myCfg.numClasses + 2)  label = "Infer";
     Serial.printf("%s %d. %s\n", (i == myMenuIndex) ? " >" : "  ", i, label.c_str());
   }
-  //Serial.println("Commands: t=next  l=select  1-6=direct");
-  Serial.println("Commands: t=next  l=select  1-5=direct  6=WebStream");
+  Serial.printf("Commands: t=next  l=select  1-%d=collect  %d=Train  %d=Infer  %d=WebStream\n",
+                myCfg.numClasses, myCfg.numClasses+1, myCfg.numClasses+2, myCfg.numClasses+3);
 
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x10_tf);
     u8g2.drawStr(0, 8, "TAP:Next HOLD:Ok");
-    int startItem = (myMenuIndex <= myCfg.numClasses) ? 1 : myMenuIndex - 2;
+    int startItem = max(1, min(myMenuIndex - 1, myTotalItems - 2));  // v76: centre selected item
     for (int i = 0; i < 3; i++) {
       int cur = startItem + i;
       if (cur > myTotalItems) break;
@@ -2597,6 +2631,15 @@ void myDrawMenu() {
 //  has been received.  Handles both 1-char menu shortcuts and full string
 //  commands (SD_LIST, CAM_CAPTURE, etc.).
 // ─────────────────────────────────────────────────────────────────────────────
+void myDispatchByIndex(int idx) {
+  // v76: maps any menu index to the correct action for any numClasses value.
+  // Collect: indices 1..numClasses  Train: numClasses+1  Infer: numClasses+2  WebStream: numClasses+3
+  if      (idx >= 1 && idx <= myCfg.numClasses) myActionCollect(idx - 1);
+  else if (idx == myCfg.numClasses + 1)          myActionTrain();
+  else if (idx == myCfg.numClasses + 2)          myActionInfer();
+  else if (idx == myCfg.numClasses + 3)          myActionWebStream();
+}
+
 void myDispatchMenuCmd(const String& cmd) {
   unsigned long now = millis();
 
@@ -2604,20 +2647,15 @@ void myDispatchMenuCmd(const String& cmd) {
   if (cmd.length() == 1) {
     char c = cmd[0];
 
-    if (c >= '1' && c <= '6') {
+    if (c >= '1' && c <= '9') {
       // Direct menu jump — only when not already in a mode
       if (!myIsSelected) {
         int newIndex = c - '0';
-        if (newIndex <= myTotalItems) {
-          myMenuIndex = newIndex;
+        if (newIndex <= myTotalItems + 1) {  // +1 allows WebStream shortcut beyond OLED menu
+          myMenuIndex = min(newIndex, myTotalItems);
           myIsSelected = true;
           myLastActivityTime = now;
-          if      (myMenuIndex == 1) myActionCollect(0);
-          else if (myMenuIndex == 2) myActionCollect(1);
-          else if (myMenuIndex == 3) myActionCollect(2);
-          else if (myMenuIndex == 4) myActionTrain();
-          else if (myMenuIndex == 5) myActionInfer();
-          else if (myMenuIndex == 6) myActionWebStream();
+          myDispatchByIndex(newIndex);
         }
       }
       return;
@@ -2638,12 +2676,7 @@ void myDispatchMenuCmd(const String& cmd) {
       if (!myIsSelected) {
         myIsSelected = true;
         myLastActivityTime = now;
-        if      (myMenuIndex == 1) myActionCollect(0);
-        else if (myMenuIndex == 2) myActionCollect(1);
-        else if (myMenuIndex == 3) myActionCollect(2);
-        else if (myMenuIndex == 4) myActionTrain();
-        else if (myMenuIndex == 5) myActionInfer();
-        else if (myMenuIndex == 6) myActionWebStream();
+        myDispatchByIndex(myMenuIndex);
       } else {
         // l/L while in a mode = exit back to menu
         myResetMenuState();
@@ -2719,12 +2752,7 @@ void myHandleMenuNavigation() {
     } else if (touchAction == 2) {
       myIsSelected = true;
       myLastActivityTime = now;
-      if      (myMenuIndex == 1) myActionCollect(0);
-      else if (myMenuIndex == 2) myActionCollect(1);
-      else if (myMenuIndex == 3) myActionCollect(2);
-      else if (myMenuIndex == 4) myActionTrain();
-      else if (myMenuIndex == 5) myActionInfer();
-      else if (myMenuIndex == 6) myActionWebStream();
+      myDispatchByIndex(myMenuIndex);
     }
   }
 }
@@ -3247,9 +3275,116 @@ void myHandleStringCommand(const String& cmd) {
     myCamStreaming = false;
     Serial.println("OK:Camera streaming stopped");
 
+  // ── v78: Binary file transfer — START ───────────────────
+  // Format: FILE_SEND_START:/path/to/file.ext:totalBytes
+  // Opens (or overwrites) the file and arms the receiver.
+  // Reply: OK:FILE_READY:/path  or  ERR:...
+  } else if (cmd.startsWith("FILE_SEND_START:")) {
+    if (!mySDavailable) { Serial.println("ERR:SD not available"); return; }
+    // Close any stale transfer
+    if (myFileRecvActive && myFileRecvHandle) {
+      myFileRecvHandle.close();
+      myFileRecvActive = false;
+    }
+    // Parse:  FILE_SEND_START:/path:totalBytes
+    String rest = cmd.substring(16); // everything after "FILE_SEND_START:"
+    int sep = rest.lastIndexOf(':'); // last ':' separates path from bytecount
+    if (sep < 1) { Serial.println("ERR:Bad FILE_SEND_START — use FILE_SEND_START:/path:bytes"); return; }
+    myFileRecvPath  = myNormPath(rest.substring(0, sep));
+    // totalBytes stored in myFileRecvBytes as expected (not used until END)
+    myFileRecvBytes = 0;
+    myEnsureParentDir(myFileRecvPath);
+    // SD.open with FILE_WRITE always starts at position 0 (truncates)
+    if (SD.exists(myFileRecvPath)) SD.remove(myFileRecvPath);
+    myFileRecvHandle = SD.open(myFileRecvPath, FILE_WRITE);
+    if (!myFileRecvHandle) {
+      Serial.print("ERR:Cannot create file: "); Serial.println(myFileRecvPath); return;
+    }
+    myFileRecvActive = true;
+    Serial.print("OK:FILE_READY:"); Serial.println(myFileRecvPath);
+
+  // ── v78: Binary file transfer — CHUNK ───────────────────
+  // Format: FILE_CHUNK:<idx>:<checksum>:<hexdata>
+  // hexdata = up to 512 hex chars = up to 256 raw bytes
+  // checksum = XOR of decoded bytes, 2 hex chars
+  // Reply: OK:CHUNK_ACK:<idx>  or  ERR:CHUNK_RETRY:<idx>:<reason>
+  } else if (cmd.startsWith("FILE_CHUNK:")) {
+    if (!myFileRecvActive) {
+      Serial.println("ERR:CHUNK_RETRY:0:No active file transfer — send FILE_SEND_START first");
+      return;
+    }
+    // Parse: FILE_CHUNK:<idx>:<checksum>:<hexdata>
+    String rest = cmd.substring(11); // after "FILE_CHUNK:"
+    int s1 = rest.indexOf(':');
+    if (s1 < 0) { Serial.println("ERR:CHUNK_RETRY:0:Bad format — missing idx"); return; }
+    int chunkIdx = rest.substring(0, s1).toInt();
+    int s2 = rest.indexOf(':', s1 + 1);
+    if (s2 < 0) { Serial.print("ERR:CHUNK_RETRY:"); Serial.print(chunkIdx); Serial.println(":Bad format — missing checksum"); return; }
+    String csHex  = rest.substring(s1 + 1, s2);
+    String hexData = rest.substring(s2 + 1);
+
+    // Decode hex → bytes
+    int hexLen = hexData.length();
+    if (hexLen % 2 != 0 || hexLen > 512) {
+      Serial.print("ERR:CHUNK_RETRY:"); Serial.print(chunkIdx);
+      Serial.println(":Hex data length invalid");
+      return;
+    }
+    int byteLen = hexLen / 2;
+    uint8_t myChunkBuf[256];
+    uint8_t myCheckXor = 0;
+    for (int i = 0; i < byteLen; i++) {
+      uint8_t hi = hexData[i * 2];
+      uint8_t lo = hexData[i * 2 + 1];
+      hi = (hi >= 'a') ? (hi - 'a' + 10) : (hi >= 'A') ? (hi - 'A' + 10) : (hi - '0');
+      lo = (lo >= 'a') ? (lo - 'a' + 10) : (lo >= 'A') ? (lo - 'A' + 10) : (lo - '0');
+      myChunkBuf[i] = (hi << 4) | lo;
+      myCheckXor ^= myChunkBuf[i];
+    }
+    // Verify checksum
+    uint8_t myExpectedCs = (uint8_t)strtol(csHex.c_str(), nullptr, 16);
+    if (myCheckXor != myExpectedCs) {
+      Serial.print("ERR:CHUNK_RETRY:"); Serial.print(chunkIdx);
+      Serial.print(":Checksum mismatch got=");
+      if (myCheckXor < 16) Serial.print("0");
+      Serial.print(myCheckXor, HEX);
+      Serial.print(" expected="); Serial.println(csHex);
+      return;
+    }
+    // Write to SD
+    size_t written = myFileRecvHandle.write(myChunkBuf, byteLen);
+    if (written != (size_t)byteLen) {
+      Serial.print("ERR:CHUNK_RETRY:"); Serial.print(chunkIdx);
+      Serial.println(":SD write failed");
+      return;
+    }
+    myFileRecvBytes += byteLen;
+    Serial.print("OK:CHUNK_ACK:"); Serial.println(chunkIdx);
+
+  // ── v78: Binary file transfer — END ─────────────────────
+  // Format: FILE_SEND_END:<expectedTotalBytes>
+  // Closes the file and verifies total byte count.
+  // Reply: OK:FILE_DONE:/path:totalBytes  or  ERR:FILE_SIZE_MISMATCH
+  } else if (cmd.startsWith("FILE_SEND_END:")) {
+    if (!myFileRecvActive) {
+      Serial.println("ERR:No active file transfer — send FILE_SEND_START first"); return;
+    }
+    long expectedBytes = cmd.substring(14).toInt();
+    myFileRecvHandle.close();
+    myFileRecvActive = false;
+    if (myFileRecvBytes == expectedBytes) {
+      Serial.print("OK:FILE_DONE:"); Serial.print(myFileRecvPath);
+      Serial.print(":"); Serial.println(myFileRecvBytes);
+    } else {
+      Serial.print("ERR:FILE_SIZE_MISMATCH expected="); Serial.print(expectedBytes);
+      Serial.print(" got="); Serial.println(myFileRecvBytes);
+    }
+    myFileRecvPath  = "";
+    myFileRecvBytes = 0;
+
   // ── STATUS (for serial monitor / health check) ───────────
   } else if (cmd == "STATUS") {
-    Serial.println("OK:=== esp32-on-device-70 Status ===");
+    Serial.println("OK:=== esp32-on-device-78 Status ===");
     Serial.print("OK:Free heap:  "); Serial.print(ESP.getFreeHeap()); Serial.println(" bytes");
     Serial.print("OK:Free PSRAM: "); Serial.print(ESP.getFreePsram()); Serial.println(" bytes");
     Serial.print("OK:Uptime:     "); Serial.print(millis() / 1000); Serial.println(" s");
@@ -3258,6 +3393,7 @@ void myHandleStringCommand(const String& cmd) {
     Serial.print("OK:Heatmap:    "); Serial.println(myHeatmapEnabled ? "ON" : "OFF");
     Serial.println("OK:SD browser: SD_LIST SD_READ SD_WRITE SD_DELETE SD_RMDIR SD_JPEG SD_HEAD SD_JPEG_WRITE");
     Serial.println("OK:Text write: SD_TEXT_WRITE_START SD_TEXT_CHUNK SD_TEXT_WRITE_END  (chunked, no size limit)");
+    Serial.println("OK:File xfer : FILE_SEND_START FILE_CHUNK FILE_SEND_END  (binary, checksummed, handshaked)");
     Serial.println("OK:Camera    : CAM_CAPTURE CAM_STREAM CAM_STREAM_STOP");
     Serial.println("OK:Heatmap   : HEATMAP_ON HEATMAP_OFF HEATMAP_STATUS");
     Serial.println("OK:Menu      : 1-5=direct  6=WebStream  t=next  l=select");
